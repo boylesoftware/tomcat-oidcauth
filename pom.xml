@@ -1,0 +1,92 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  - Project descriptor.
+  -
+  - author: Lev Himmelfarb
+ -->
+
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+
+	<modelVersion>4.0.0</modelVersion>
+
+	<parent>
+		<groupId>org.bsworks</groupId>
+		<artifactId>parent</artifactId>
+		<version>2.0.0</version>
+	</parent>
+
+	<groupId>org.bsworks.catalina.authenticator.oidc</groupId>
+	<artifactId>tomcat8-oidcauth</artifactId>
+	<version>1.0.0-SNAPSHOT</version>
+	<packaging>jar</packaging>
+
+	<name>OpenID Connect Authenticator</name>
+	<description>Apache Tomcat 8 authenticator implementation that extends the standard form-based authenticator with support of OpenID Connect.</description>
+	<url>https://www.boylesoftware.com/wiki/index.php/OpenID_Connect_Authenticator_for_Tomcat</url>
+	<inceptionYear>2015</inceptionYear>
+
+	<developers>
+		<developer>
+			<id>levahim</id>
+			<name>Lev Himmelfarb</name>
+			<email>lev@boylesoftware.com</email>
+			<roles>
+				<role>developer</role>
+			</roles>
+			<timezone>America/New_York</timezone>
+		</developer>
+	</developers>
+
+	<scm>
+		<connection>scm:git:https://github.com/boylesoftware/tomcat8-oidcauth.git</connection>
+		<developerConnection>scm:git:git@github.com:boylesoftware/tomcat8-oidcauth.git</developerConnection>
+		<tag>HEAD</tag>
+	</scm>
+
+	<issueManagement>
+		<system>GitHub</system>
+		<url>https://github.com/boylesoftware/tomcat8-oidcauth/issues</url>
+	</issueManagement>
+
+	<repositories>
+		<repository>
+			<id>boylesoftware-os</id>
+			<url>http://www.boylesoftware.com/maven/repo-os</url>
+		</repository>
+	</repositories>
+
+	<properties>
+		<tomcat.version>8.0.17</tomcat.version>
+	</properties>
+
+	<build>
+		<plugins>
+			<plugin>
+				<groupId>org.apache.maven.plugins</groupId>
+				<artifactId>maven-javadoc-plugin</artifactId>
+				<configuration>
+					<links>
+						<link>http://docs.oracle.com/javaee/7/api/</link>
+						<link>http://tomcat.apache.org/tomcat-8.0-doc/api/</link>
+					</links>
+				</configuration>
+			</plugin>
+		</plugins>
+	</build>
+
+	<dependencies>
+		<dependency>
+			<groupId>org.apache.tomcat</groupId>
+			<artifactId>tomcat-catalina</artifactId>
+			<version>${tomcat.version}</version>
+			<scope>provided</scope>
+		</dependency>
+		<dependency>
+			<groupId>org.apache.tomcat</groupId>
+			<artifactId>tomcat-juli</artifactId>
+			<version>${tomcat.version}</version>
+			<scope>provided</scope>
+		</dependency>
+	</dependencies>
+
+</project>
