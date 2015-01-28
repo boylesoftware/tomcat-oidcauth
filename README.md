@@ -1,5 +1,5 @@
-OpenID Connect Authenticator for Tomcat 8
-=========================================
+OpenID Connect Authenticator for Tomcat
+=======================================
 
 This is an extension of the standard [Apache Tomcat](https://tomcat.apache.org)
 authenticator used for form-based user authentication that uses OpenID Connect
@@ -12,6 +12,9 @@ http://openid.net/connect/
 Also, Google supports OpenID Connect standard with the details described here:
 
 https://developers.google.com/accounts/docs/OpenIDConnect
+
+Introduction
+------------
 
 The goal of developing this authenticator was to allow web-applications that
 rely on the container to provide form-based user authentication to transparently
@@ -87,54 +90,54 @@ The following authenticator valve configuration properties are available:
 <dl>
 
 <dt>discoveryDocumentURL</dt>
-<dd>*(required)* URL of the OpenID Connect provider's discovery document. The
-discovery document describes the provider's API endpoints used during the
+<dd><em>(required)</em> URL of the OpenID Connect provider's discovery document.
+The discovery document describes the provider's API endpoints used during the
 authentication sequence. Specifying this URL connects the authenticator to a
-particular OpenID Connect provider. For example, for *Google* (including *Google
-Apps*), the discovery document URL is
+particular OpenID Connect provider. For example, for <em>Google</em> (including
+<em>Google Apps</em>), the discovery document URL is
 https://accounts.google.com/.well-known/openid-configuration.</dd>
 
 <dt>clientId</dt>
-<dd>*(required)* OpenID Connect client id. This id identifies the
+<dd><em>(required)</em> OpenID Connect client id. This id identifies the
 web-application for the OpenID Connect provider.</dd>
 
 <dt>clientSecret</dt>
-<dd>*(optional)* OpenID Connect client secret. Some OpenID Connect providers
-(including *Google*) require a special client secret to be submitted together
-with the client id. If not specified, no such secret is included in the calls to
-the OpenID Connect provider's endpoints.</dd>
+<dd><em>(optional)</em> OpenID Connect client secret. Some OpenID Connect
+providers (including <em>Google</em>) require a special client secret to be
+submitted together with the client id. If not specified, no such secret is
+included in the calls to the OpenID Connect provider's endpoints.</dd>
 
 <dt>hostBaseURI</dt>
-<dd>*(optional)* Virtual host base URI. When the authenticator redirects the
-client to the OpenID Connect authorization server, it has to provide it with the
-return URL, which is the application's `j_security_check` URL. The hostBaseURI
-property is used to construct the return URL. It must include the protocol
-(should always be HTTPS), the host and, if needed, port, but not the context
-path. It also must not end with a slash. For example, "https://www.example.com".
-If this property is not specified, the authenticator will make an attempt to
-construct the URI based on the current request. In the majority of cases, the
-authenticator can construct the URI correctly, so this property is rarely needs
-used.</dd>
+<dd><em>(optional)</em> Virtual host base URI. When the authenticator redirects
+the client to the OpenID Connect authorization server, it has to provide it with
+the return URL, which is the application's <code>j_security_check</code> URL.
+The <code>hostBaseURI</code> property is used to construct the return URL. It
+must include the protocol (should always be HTTPS), the host and, if needed,
+port, but not the context path. It also must not end with a slash. For example,
+"https://www.example.com". If this property is not specified, the authenticator
+will make an attempt to construct the URI based on the current request. In the
+majority of cases, the authenticator can construct the URI correctly, so this
+property is rarely used.</dd>
 
 <dt>hostedDomain</dt>
-<dd>*(optional)* Some OpenID Connect providers (for example *Google Apps*) can
-limit the realm of the users to a given domain. This property can be used to
-specify such domain.</dd>
+<dd><em>(optional)</em> Some OpenID Connect providers (for example <em>Google
+Apps</em>) can limit the realm of the users to a given domain. This property can
+be used to specify such domain.</dd>
 
 <dt>usernameClaim</dt>
-<dd>*(optional)* Claim in the
-[ID Token](http://openid.net/specs/openid-connect-core-1_0.html#IDToken) used as
-the username for the web-application. The default is "sub" (the subject
+<dd><em>(optional)</em> Claim in the
+<a href="http://openid.net/specs/openid-connect-core-1_0.html#IDToken">ID Token</a>
+used as the username for the web-application. The default is "sub" (the subject
 identifier), but often web-application use e-mail address as the username, in
 which case this argument needs to be specified as "email".</dd>
 
 <dt>httpConnectTimeout</dt>
-<dd>*(optional)* Timeout in milliseconds used for establishing server-to-server
-HTTP connections with the OpenID Connect provider's endpoints. The default is
-5000 (5 seconds).</dd>
+<dd><em>(optional)</em> Timeout in milliseconds used for establishing
+server-to-server HTTP connections with the OpenID Connect provider's endpoints.
+The default is 5000 (5 seconds).</dd>
 
 <dt>httpReadTimeout</dt>
-<dd>*(optional)* Timeout in milliseconds used for reading data in
+<dd><em>(optional)</em> Timeout in milliseconds used for reading data in
 server-to-server HTTP connections with the OpenID Connect provider's endpoints.
 The default is 5000 (5 seconds).</dd>
 
