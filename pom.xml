@@ -22,7 +22,7 @@
 
 	<name>OpenID Connect Authenticator</name>
 	<description>Apache Tomcat 8 authenticator implementation that extends the standard form-based authenticator with support of OpenID Connect.</description>
-	<url>https://www.boylesoftware.com/wiki/index.php/OpenID_Connect_Authenticator_for_Tomcat</url>
+	<url>https://github.com/boylesoftware/tomcat8-oidcauth</url>
 	<inceptionYear>2015</inceptionYear>
 
 	<developers>
@@ -56,7 +56,7 @@
 	</repositories>
 
 	<properties>
-		<tomcat.version>8.0.17</tomcat.version>
+		<tomcat.version>8.0.18</tomcat.version>
 	</properties>
 
 	<build>
