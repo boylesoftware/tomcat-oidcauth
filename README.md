@@ -153,7 +153,7 @@ Here is an example of the valve configuration for an application that uses
 
 ```xml
 <Valve className="org.bsworks.catalina.authenticator.oidc.OpenIDConnectAuthenticator"
-       discoveryDocumentURL="https://my.oidcprovider.com/.well-known/openid-configuration"
+       discoveryDocumentURL="https://accounts.google.com/.well-known/openid-configuration"
        clientId="XXX"
        clientSecret="XXX"
        hostedDomain="example.com"
