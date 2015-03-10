@@ -595,9 +595,18 @@ public class OpenIDConnectAuthenticator
 			params.put("client_secret", this.clientSecret);
 		final JSONObject respJson;
 		try {
+			final String respEntity = this.httpPost(
+					new URL(this.opConfig.getTokenEndpoint()),
+					params, "application/json");
+			if (respEntity == null) {
+				if (debug)
+					this.log.debug("exchange code call failed");
+				this.forwardToErrorPage(request, response,
+						this.context.getLoginConfig());
+				return false;
+			}
 			respJson = new JSONObject(new JSONTokener(new StringReader(
-					this.httpPost(new URL(this.opConfig.getTokenEndpoint()),
-							params, "application/json"))));
+					respEntity)));
 		} catch (final JSONException | IOException e) {
 			this.log.error("could not get valid response from authorization"
 					+ " server's token endpoint", e);
@@ -816,7 +825,7 @@ public class OpenIDConnectAuthenticator
 	 * @param accept Accepted response content type, or {@code null} for
 	 * anything.
 	 *
-	 * @return The response entity.
+	 * @return The response entity, or {@code null} if error response.
 	 *
 	 * @throws IOException If an I/O error happens.
 	 */
@@ -852,6 +861,13 @@ public class OpenIDConnectAuthenticator
 		try (final OutputStream out = con.getOutputStream()) {
 			out.write(body.toString().getBytes(UTF8.name()));
 			out.flush();
+			final int respCode = con.getResponseCode();
+			if (respCode != HttpURLConnection.HTTP_OK) {
+				this.log.debug("error response " + respCode
+						+ ": " + con.getResponseMessage());
+				con.disconnect();
+				return null;
+			}
 			try (final InputStream in = con.getInputStream()) {
 				final byte[] buf = new byte[512];
 				int n;
