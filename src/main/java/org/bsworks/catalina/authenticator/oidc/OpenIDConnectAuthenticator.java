@@ -314,7 +314,7 @@ public class OpenIDConnectAuthenticator
 	 * See overridden method.
 	 */
 	@Override
-	public boolean authenticate(final Request request,
+	public boolean doAuthenticate(final Request request,
 			final HttpServletResponse response)
 		throws IOException {
 

@@ -21,7 +21,7 @@
 	<packaging>jar</packaging>
 
 	<name>OpenID Connect Authenticator</name>
-	<description>Apache Tomcat 8 authenticator implementation that extends the standard form-based authenticator with support of OpenID Connect.</description>
+	<description>Apache Tomcat 8.5 authenticator implementation that extends the standard form-based authenticator with support of OpenID Connect.</description>
 	<url>https://github.com/boylesoftware/tomcat8-oidcauth</url>
 	<inceptionYear>2015</inceptionYear>
 
@@ -56,7 +56,7 @@
 	</repositories>
 
 	<properties>
-		<tomcat.version>8.0.18</tomcat.version>
+		<tomcat.version>8.5.11</tomcat.version>
 	</properties>
 
 	<build>
@@ -67,7 +67,7 @@
 				<configuration>
 					<links>
 						<link>http://docs.oracle.com/javaee/7/api/</link>
-						<link>http://tomcat.apache.org/tomcat-8.0-doc/api/</link>
+						<link>http://tomcat.apache.org/tomcat-8.5-doc/api/</link>
 					</links>
 				</configuration>
 			</plugin>
