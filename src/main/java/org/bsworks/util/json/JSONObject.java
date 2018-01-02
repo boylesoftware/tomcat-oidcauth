@@ -35,7 +35,6 @@ import java.util.HashMap;
 import java.util.Iterator;
 import java.util.Locale;
 import java.util.Map;
-import java.util.Map.Entry;
 import java.util.ResourceBundle;
 import java.util.Set;
 
@@ -49,9 +48,9 @@ import java.util.Set;
 public class JSONObject {
 
 	/**
-	 * JSONObject.NULL is equivalent to the value that JavaScript calls null,
-	 * whilst Java's null is equivalent to the value that JavaScript calls
-	 * undefined.
+	 * {@link JSONObject#NULL} is equivalent to the value that JavaScript calls
+	 * null, whilst Java's null is equivalent to the value that JavaScript
+	 * calls undefined.
 	 */
 	private static final class Null {
 
@@ -61,27 +60,28 @@ public class JSONObject {
 		Null() {}
 
 		/**
-		 * There is only intended to be a single instance of the NULL object,
+		 * There is only intended to be a single instance of the Null object,
 		 * so the clone method returns itself.
 		 *
-		 * @return NULL.
+		 * @return Null.
 		 */
 		@Override
 		protected final Object clone() {
+
 			return this;
 		}
 
 		/**
 		 * A Null object is equal to the null value and to itself.
 		 *
-		 * @param object
-		 *			An object to test for nullness.
-		 * @return true if the object parameter is the JSONObject.NULL object or
-		 *		 null.
+		 * @param object An object to test for nullness.
+		 * @return {@code true} if the object parameter is the
+		 * {@link JSONObject#NULL} object or {@code null}.
 		 */
 		@Override
-		public boolean equals(Object object) {
-			return object == null || object == this;
+		public boolean equals(final Object object) {
+
+			return ((object == null) || (object == this));
 		}
 
 		/**
@@ -91,190 +91,182 @@ public class JSONObject {
 		 */
 		@Override
 		public String toString() {
+
 			return "null";
 		}
 
+		/**
+		 * Get hash code of the "null" string.
+		 *
+		 * @return Hash code of the string "null".
+		 */
 		@Override
 		public int hashCode() {
+
 			return "null".hashCode();
 		}
 	}
 
 	/**
-	 * The map where the JSONObject's properties are kept.
+	 * The map where the JSON object's properties are kept.
 	 */
-	private final Map<String, Object> map = new HashMap<>();
+	private final Map<String, Object> props = new HashMap<>();
 
 	/**
 	 * It is sometimes more convenient and less ambiguous to have a
-	 * <code>NULL</code> object than to use Java's <code>null</code> value.
-	 * <code>JSONObject.NULL.equals(null)</code> returns <code>true</code>.
-	 * <code>JSONObject.NULL.toString()</code> returns <code>"null"</code>.
+	 * {@code NULL} object than to use Java's {@code null} value.
+	 * {@code JSONObject.NULL.equals(null)} returns {@code true}.
+	 * {@code JSONObject.NULL.toString()} returns "null".
 	 */
 	public static final Object NULL = new Null();
 
+
 	/**
-	 * Construct an empty JSONObject.
+	 * Construct an empty JSON object.
 	 */
 	public JSONObject() {}
 
-
 	/**
-	 * Construct a JSONObject from a JSONTokener.
+	 * Construct a JSON object from a tokenizer.
 	 *
-	 * @param x
-	 *			A JSONTokener object containing the source string.
-	 * @throws JSONException
-	 *			 If there is a syntax error in the source string or a
-	 *			 duplicated key.
+	 * @param parser A tokenizer containing the source JSON string.
+	 * @throws JSONException If there is a syntax error in the source string or
+	 * a duplicated key.
 	 * @throws IOException If an I/O error happens reading from the tokenizer.
 	 */
-	public JSONObject(JSONTokener x) throws JSONException, IOException {
-		char c;
-		String key;
+	public JSONObject(final JSONTokener parser)
+		throws JSONException, IOException {
 
-		if (x.nextClean() != '{') {
-			throw new JSONException(x, "A JSONObject text must begin with '{'");
-		}
-		for (;;) {
-			c = x.nextClean();
-			switch (c) {
-			case 0:
-				throw new JSONException(x, "A JSONObject text must end with '}'");
-			case '}':
-				return;
-			default:
-				x.back();
-				key = x.nextValue().toString();
-			}
+		// object opens with '{'
+		if (parser.nextClean() != '{')
+			throw new JSONException(parser, "A JSON object text must begin with '{'.");
 
-// The key is followed by ':'.
+		// read key/value pairs
+		while (true) {
 
-			c = x.nextClean();
-			if (c != ':') {
-				throw new JSONException(x, "Expected a ':' after a key");
-			}
-			this.putOnce(key, x.nextValue());
-
-// Pairs are separated by ','.
-
-			switch (x.nextClean()) {
-			case ';':
-			case ',':
-				if (x.nextClean() == '}') {
-					return;
-				}
-				x.back();
+			// analyze initial pair character
+			char c = parser.nextClean();
+			if (c == '}')
 				break;
-			case '}':
-				return;
-			default:
-				throw new JSONException(x, "Expected a ',' or '}'");
-			}
+			if (c == 0)
+				throw new JSONException(parser, "A JSON object text must end with '}'.");
+
+			// put it back
+			parser.back();
+
+			// read the pair's key
+			final String key = parser.nextValue().toString();
+
+			// the key is followed by ':'
+			c = parser.nextClean();
+			if (c != ':')
+				throw new JSONException(parser, "Expected a ':' after a key.");
+
+			// read the value and store the property
+			this.putOnce(key, parser.nextValue());
+
+			// pairs are separated by ','
+			c = parser.nextClean();
+			if (c == '}')
+				break;
+			if (c != ',')
+				throw new JSONException(parser, "Expected a ',' or '}'.");
 		}
 	}
 
 	/**
-	 * Construct a JSONObject from a Map.
+	 * Construct a JSON object from a map.
 	 *
-	 * @param map
-	 *			A map object that can be used to initialize the contents of
-	 *			the JSONObject.
+	 * @param props A map used to initialize the contents of the JSON object.
+	 * Can be {@code null} to create an empty object. Map entries with
+	 * {@code null} value are ignored.
 	 */
-	public JSONObject(Map<String, Object> map) {
-		if (map != null) {
-			Iterator<Entry<String, Object>> i = map.entrySet().iterator();
-			while (i.hasNext()) {
-				Entry<String, Object> entry = i.next();
-				Object value = entry.getValue();
-				if (value != null) {
-					this.map.put(entry.getKey(), wrap(value));
-				}
-			}
+	public JSONObject(final Map<String, Object> props) {
+
+		if (props == null)
+			return;
+
+		for (final Map.Entry<String, Object> entry : props.entrySet()) {
+			final Object value = entry.getValue();
+			if (value != null)
+				this.props.put(entry.getKey(), JSONObject.wrap(value));
 		}
 	}
 
 	/**
-	 * Construct a JSONObject from an Object using bean getters. It reflects on
-	 * all of the public methods of the object. For each of the methods with no
-	 * parameters and a name starting with <code>"get"</code> or
-	 * <code>"is"</code> followed by an uppercase letter, the method is invoked,
-	 * and a key and the value returned from the getter method are put into the
-	 * new JSONObject.
+	 * Construct a JSON object from an object using bean getters. It reflects
+	 * on all of the public methods of the object. For each of the methods with
+	 * no parameters and a name starting with "get" or "is" followed by an
+	 * uppercase letter, the method is invoked and a key and the value returned
+	 * are put into the new JSON object.
 	 *
-	 * The key is formed by removing the <code>"get"</code> or <code>"is"</code>
-	 * prefix. If the second remaining character is not upper case, then the
-	 * first character is converted to lower case.
+	 * <p>The key is formed by removing the "get" or "is" prefix. If the second
+	 * remaining character is not upper case, then the first character is
+	 * converted to lower case.
 	 *
-	 * For example, if an object has a method named <code>"getName"</code>, and
-	 * if the result of calling <code>object.getName()</code> is
-	 * <code>"Larry Fine"</code>, then the JSONObject will contain
-	 * <code>"name": "Larry Fine"</code>.
+	 * <p>For example, if an object has a method named "getName" and if the
+	 * result of calling {@code object.getName()} is "Larry Fine", then the
+	 * JSON object will contain {@code "name": "Larry Fine"}.
 	 *
-	 * @param bean
-	 *			An object that has getter methods that should be used to make
-	 *			a JSONObject.
+	 * @param bean An object that has getter methods that should be used to
+	 * make a JSON object.
 	 */
-	public JSONObject(Object bean) {
+	public JSONObject(final Object bean) {
+
 		this.populateMap(bean);
 	}
 
 	/**
-	 * Construct a JSONObject from an Object, using reflection to find the
-	 * public members. The resulting JSONObject's keys will be the strings from
-	 * the names array, and the values will be the field values associated with
-	 * those keys in the object. If a key is not found or not visible, then it
-	 * will not be copied into the new JSONObject.
+	 * Construct a JSON object from an object using reflection to find the
+	 * public members. The resulting JSON object's keys will be the strings
+	 * from the names array and the values will be the field values associated
+	 * with those keys in the object. If a key is not found or not visible,
+	 * then it will not be copied into the new JSON object.
 	 *
-	 * @param object
-	 *			An object that has fields that should be used to make a
-	 *			JSONObject.
-	 * @param names
-	 *			An array of strings, the names of the fields to be obtained
-	 *			from the object.
+	 * @param object An object that has fields that should be used to make a
+	 * JSON object.
+	 * @param names An array of strings, the names of the fields to be obtained
+	 * from the object.
 	 */
-	public JSONObject(Object object, String names[]) {
-		this();
-		Class<?> c = object.getClass();
-		for (int i = 0; i < names.length; i += 1) {
-			String name = names[i];
+	public JSONObject(final Object object, final String names[]) {
+
+		final Class<?> c = object.getClass();
+		for (final String name : names) {
 			try {
 				this.putOpt(name, c.getField(name).get(object));
-			} catch (@SuppressWarnings("unused") Exception ignore) {
-				// nothing
+			} catch (@SuppressWarnings("unused") Exception e) {
+				// skip the property
 			}
 		}
 	}
 
 	/**
-	 * Construct a JSONObject from a ResourceBundle.
+	 * Construct a JSON object from a {@link ResourceBundle}.
 	 *
-	 * @param baseName
-	 *			The ResourceBundle base name.
-	 * @param locale
-	 *			The Locale to load the ResourceBundle for.
+	 * @param baseName The {@link ResourceBundle} base name.
+	 * @param locale The {@link Locale} to load the {@link ResourceBundle} for.
 	 */
-	public JSONObject(String baseName, Locale locale) {
-		this();
-		ResourceBundle bundle = ResourceBundle.getBundle(baseName, locale,
-				Thread.currentThread().getContextClassLoader());
+	public JSONObject(final String baseName, final Locale locale) {
 
-// Iterate through the keys in the bundle.
+		final ResourceBundle bundle = ResourceBundle.getBundle(
+				baseName, locale,
+				Thread.currentThread().getContextClassLoader()
+		);
 
-		Enumeration<String> keys = bundle.getKeys();
-		while (keys.hasMoreElements()) {
-			Object key = keys.nextElement();
+		for (final Enumeration<String> keys = bundle.getKeys(); keys.hasMoreElements();) {
+			final Object key = keys.nextElement();
 			if (key != null) {
 
-// Go through the path, ensuring that there is a nested JSONObject for each
-// segment except the last. Add the value using the last segment's name into
-// the deepest nested JSONObject.
+				// Go through the path, ensuring that there is a nested
+				// JSONObject for each segment except the last. Add the value
+				// using the last segment's name into the deepest nested
+				// JSONObject.
 
-				String[] path = ((String) key).split("\\.");
-				int last = path.length - 1;
+				final String[] path = ((String) key).split("\\.");
+				final int last = path.length - 1;
 				JSONObject target = this;
-				for (int i = 0; i < last; i += 1) {
-					String segment = path[i];
+				for (int i = 0; i < last; i++) {
+					final String segment = path[i];
 					JSONObject nextTarget = target.optJSONObject(segment);
 					if (nextTarget == null) {
 						nextTarget = new JSONObject();
@@ -621,7 +613,7 @@ public class JSONObject {
 	 * @return true if the key exists in the JSONObject.
 	 */
 	public boolean has(String key) {
-		return this.map.containsKey(key);
+		return this.props.containsKey(key);
 	}
 
 	/**
@@ -679,7 +671,7 @@ public class JSONObject {
 	 * @return A keySet.
 	 */
 	public Set<String> keySet() {
-		return this.map.keySet();
+		return this.props.keySet();
 	}
 
 	/**
@@ -688,7 +680,7 @@ public class JSONObject {
 	 * @return The number of keys in the JSONObject.
 	 */
 	public int length() {
-		return this.map.size();
+		return this.props.size();
 	}
 
 	/**
@@ -743,7 +735,7 @@ public class JSONObject {
 	 * @return An object which is the value, or null if there is no value.
 	 */
 	public Object opt(String key) {
-		return key == null ? null : this.map.get(key);
+		return key == null ? null : this.props.get(key);
 	}
 
 	/**
@@ -967,7 +959,7 @@ public class JSONObject {
 
 						Object result = method.invoke(bean, (Object[]) null);
 						if (result != null) {
-							this.map.put(key, wrap(result));
+							this.props.put(key, wrap(result));
 						}
 					}
 				}
@@ -1081,7 +1073,7 @@ public class JSONObject {
 		}
 		if (value != null) {
 			testValidity(value);
-			this.map.put(key, value);
+			this.props.put(key, value);
 		} else {
 			this.remove(key);
 		}
@@ -1222,7 +1214,7 @@ public class JSONObject {
 	 *		 no value.
 	 */
 	public Object remove(String key) {
-		return this.map.remove(key);
+		return this.props.remove(key);
 	}
 
 	/**
@@ -1586,7 +1578,7 @@ public class JSONObject {
 				if (indentFactor > 0) {
 					writer.write(' ');
 				}
-				writeValue(writer, this.map.get(key), indentFactor, indent);
+				writeValue(writer, this.props.get(key), indentFactor, indent);
 			} else if (length != 0) {
 				final int newindent = indent + indentFactor;
 				while (keys.hasNext()) {
@@ -1603,7 +1595,7 @@ public class JSONObject {
 					if (indentFactor > 0) {
 						writer.write(' ');
 					}
-					writeValue(writer, this.map.get(key), indentFactor, newindent);
+					writeValue(writer, this.props.get(key), indentFactor, newindent);
 					commanate = true;
 				}
 				if (indentFactor > 0) {

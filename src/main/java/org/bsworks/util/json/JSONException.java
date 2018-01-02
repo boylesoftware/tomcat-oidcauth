@@ -19,25 +19,25 @@ public class JSONException
 	/**
 	 * Create new exception.
 	 *
-	 * @param tok The tokenizer.
+	 * @param parser The tokenizer.
 	 * @param message Error description.
 	 */
-	JSONException(final JSONTokener tok, final String message) {
-		super("Invalid JSON at line " + tok.getLine() + ", col "
-				+ tok.getCharacter() + ": " + message);
+	JSONException(final JSONTokener parser, final String message) {
+		super("Invalid JSON at line " + parser.getLine() + ", col "
+				+ parser.getCharacter() + ": " + message);
 	}
 
 	/**
 	 * Create new exception.
 	 *
-	 * @param tok The tokenizer.
+	 * @param parser The tokenizer.
 	 * @param message Error description.
 	 * @param cause The cause.
 	 */
-	JSONException(final JSONTokener tok, final String message,
+	JSONException(final JSONTokener parser, final String message,
 			final Throwable cause) {
-		super("Invalid JSON at line " + tok.getLine() + ", col "
-				+ tok.getCharacter() + ": " + message, cause);
+		super("Invalid JSON at line " + parser.getLine() + ", col "
+				+ parser.getCharacter() + ": " + message, cause);
 	}
 
 	/**

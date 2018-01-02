@@ -121,7 +121,7 @@ public class JSONTokener {
 
 		while (true) {
 			final char c = this.next();
-			if (c == 0 || c > ' ')
+			if ((c == 0) || (c > ' '))
 				return c;
 		}
 	}
