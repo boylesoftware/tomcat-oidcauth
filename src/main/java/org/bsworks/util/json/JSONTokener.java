@@ -149,6 +149,7 @@ public class JSONTokener {
 		case '[':
 			this.back();
 			return new JSONArray(this);
+		default:
 		}
 
 		final StringBuilder sb = new StringBuilder();
