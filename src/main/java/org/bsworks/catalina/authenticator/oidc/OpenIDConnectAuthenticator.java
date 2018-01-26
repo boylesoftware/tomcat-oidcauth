@@ -1,5 +1,6 @@
 package org.bsworks.catalina.authenticator.oidc;
 
+import java.beans.PropertyChangeListener;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
@@ -12,30 +13,43 @@ import java.net.URLConnection;
 import java.net.URLEncoder;
 import java.nio.charset.Charset;
 import java.security.Principal;
+import java.security.cert.X509Certificate;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Enumeration;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
+import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 
+import org.apache.catalina.Container;
+import org.apache.catalina.Context;
+import org.apache.catalina.CredentialHandler;
 import org.apache.catalina.LifecycleException;
+import org.apache.catalina.Realm;
 import org.apache.catalina.Session;
+import org.apache.catalina.Wrapper;
 import org.apache.catalina.authenticator.Constants;
 import org.apache.catalina.authenticator.FormAuthenticator;
 import org.apache.catalina.authenticator.SavedRequest;
 import org.apache.catalina.connector.Request;
 import org.apache.catalina.connector.Response;
+import org.apache.catalina.realm.RealmBase;
 import org.apache.juli.logging.Log;
 import org.apache.juli.logging.LogFactory;
 import org.apache.tomcat.util.codec.binary.Base64;
+import org.apache.tomcat.util.descriptor.web.LoginConfig;
+import org.apache.tomcat.util.descriptor.web.SecurityConstraint;
 import org.bsworks.util.json.JSONException;
 import org.bsworks.util.json.JSONObject;
 import org.bsworks.util.json.JSONTokener;
+import org.ietf.jgss.GSSContext;
 
 
 /**
- * <i>OpenID Connect</i> authenticator.
+ * <em>OpenID Connect</em> authenticator.
  *
  * @author Lev Himmelfarb
  */
@@ -46,6 +60,13 @@ public class OpenIDConnectAuthenticator
 	 * UTF-8 charset.
 	 */
 	private static final Charset UTF8 = Charset.forName("UTF-8");
+
+	/**
+	 * Name of the HTTP session note used to store the issuer ID of the OP used
+	 * to authenticate the currently authenticated principal.
+	 */
+	private static final String SESS_OIDC_ISSUER_NOTE =
+		"org.bsworks.catalina.session.ISSUER";
 
 
 	/**
@@ -59,44 +80,41 @@ public class OpenIDConnectAuthenticator
 	protected String hostBaseURI;
 
 	/**
-	 * Discovery document URL.
+	 * Providers configuration.
 	 */
-	protected String discoveryDocumentURL;
+	protected String providers;
 
 	/**
-	 * OpenID Connect client id.
-	 */
-	protected String clientId;
-
-	/**
-	 * Optional OpenID Connect client secret.
-	 */
-	protected String clientSecret;
-
-	/**
-	 * Optional hosted domain.
-	 */
-	protected String hostedDomain;
-
-	/**
-	 * Name of the claim in the ID Token used as the username.
+	 * Name of the claim in the ID Token used as the username in the users
+	 * realm.
 	 */
 	protected String usernameClaim = "sub";
 
 	/**
-	 * HTTP connect timeout.
+	 * Space separated list of scopes to add to "openid" scope in the
+	 * authorization endpoint request.
+	 */
+	protected String additionalScopes;
+
+	/**
+	 * Tells if the form-based authentication is disabled.
+	 */
+	protected boolean noForm = false;
+
+	/**
+	 * HTTP connect timeout for OP endpoints.
 	 */
 	protected int httpConnectTimeout = 5000;
 
 	/**
-	 * HTTP read timeout.
+	 * HTTP read timeout for OP endpoints.
 	 */
 	protected int httpReadTimeout = 5000;
 
 	/**
-	 * OpenID Connect provider configuration.
+	 * OpenID Connect Provider configurations provider.
 	 */
-	private OpenIDConfiguration opConfig;
+	private OPConfigurationsProvider ops;
 
 
 	/**
@@ -123,83 +141,28 @@ public class OpenIDConnectAuthenticator
 	}
 
 	/**
-	 * Get discovery document URL property.
+	 * Get providers configuration.
 	 *
-	 * @return Discovery document URL.
+	 * @return The providers configuration
 	 */
-	public String getDiscoveryDocumentURL() {
+	public String getProviders() {
 
-		return this.discoveryDocumentURL;
+		return this.providers;
 	}
 
 	/**
-	 * Set discovery document URL property.
+	 * Set providers configuration.
 	 *
-	 * @param discoveryDocumentURL Discovery document URL.
+	 * @param providers The providers configuration, which is a whitespace
+	 * separated list of descriptors, one for each configured provider. Each
+	 * descriptor is a comma-separated string that includes OP's issuer ID,
+	 * web-application's client ID, web-application's client secret and,
+	 * optionally, additional query string parameters for the OP's authorization
+	 * endpoint in {@code x-www-form-urlencoded} format.
 	 */
-	public void setDiscoveryDocumentURL(final String discoveryDocumentURL) {
+	public void setProviders(final String providers) {
 
-		this.discoveryDocumentURL = discoveryDocumentURL;
-	}
-
-	/**
-	 * Get OpenID Connect client id.
-	 *
-	 * @return The client id.
-	 */
-	public String getClientId() {
-
-		return this.clientId;
-	}
-
-	/**
-	 * Set OpenID Connect client id.
-	 *
-	 * @param clientId The client id.
-	 */
-	public void setClientId(final String clientId) {
-
-		this.clientId = clientId;
-	}
-
-	/**
-	 * Get optional OpenID Connect client secret.
-	 *
-	 * @return The client secret, or {@code null} if none.
-	 */
-	public String getClientSecret() {
-
-		return this.clientSecret;
-	}
-
-	/**
-	 * Set optional OpenID Connect client secret.
-	 *
-	 * @param clientSecret The client secret.
-	 */
-	public void setClientSecret(final String clientSecret) {
-
-		this.clientSecret = clientSecret;
-	}
-
-	/**
-	 * Get optional hosted domain property.
-	 *
-	 * @return The hosted domain, or {@code null} if not configured.
-	 */
-	public String getHostedDomain() {
-
-		return this.hostedDomain;
-	}
-
-	/**
-	 * Set optional hosted domain property.
-	 *
-	 * @param hostedDomain The hosted domain.
-	 */
-	public void setHostedDomain(final String hostedDomain) {
-
-		this.hostedDomain = hostedDomain;
+		this.providers = providers;
 	}
 
 	/**
@@ -213,14 +176,55 @@ public class OpenIDConnectAuthenticator
 	}
 
 	/**
-	 * Set name of the claim in the ID Token used as the username. The default
-	 * is "sub".
+	 * Set name of the claim in the ID Token used as the username in the users
+	 * realm. The default is "sub".
 	 *
-	 * @param usernameClaim the usernameClaim to set
+	 * @param usernameClaim The claim name.
 	 */
 	public void setUsernameClaim(final String usernameClaim) {
 
 		this.usernameClaim = usernameClaim;
+	}
+
+	/**
+	 * Get additional scopes for the authorization endpoint.
+	 *
+	 * @return The additional scopes.
+	 */
+	public String getAdditionalScopes() {
+
+		return this.additionalScopes;
+	}
+
+	/**
+	 * Set additional scopes for the authorization endpoint. The scopes are
+	 * added to the required "openid" scope, which is always included.
+	 *
+	 * @param additionalScopes The additional scopes as a space separated list.
+	 */
+	public void setAdditionalScopes(final String additionalScopes) {
+
+		this.additionalScopes = additionalScopes;
+	}
+
+	/**
+	 * Tell if form-based authentication is disabled.
+	 *
+	 * @return {@code true} if disabled.
+	 */
+	public boolean isNoForm() {
+
+		return this.noForm;
+	}
+
+	/**
+	 * Set flag that tells if the form-based authentication should be disabled.
+	 *
+	 * @param noForm {@code true} to disabled form-based authentication.
+	 */
+	public void setNoForm(final boolean noForm) {
+
+		this.noForm = noForm;
 	}
 
 	/**
@@ -277,33 +281,27 @@ public class OpenIDConnectAuthenticator
 	 */
 	@Override
 	protected synchronized void startInternal()
-		throws LifecycleException {
+			throws LifecycleException {
 
-		// verify that client id is configured
-		if (this.clientId == null)
+		// verify that providers are configured
+		if (this.providers == null)
 			throw new LifecycleException("OpenIDConnectAuthenticator requires"
-						+ " clientId property.");
+						+ " \"providers\" property.");
 
-		// get the OpenID Connect provider configuration
-		if (this.discoveryDocumentURL == null)
-			throw new LifecycleException("OpenIDConnectAuthenticator requires"
-					+ " discoveryDocumentURL property.");
-		final URL discoveryDocumentURL;
+		// parse provider definitions and create the configurations provider
+		final String[] opDefs = this.providers.trim().split("\\s+");
+		final List<OPDescriptor> opDescs = new ArrayList<>(opDefs.length);
+		for (final String opDef : opDefs)
+			opDescs.add(new OPDescriptor(opDef));
+		this.ops = new OPConfigurationsProvider(opDescs);
+
+		// preload provider configurations and detect any errors
 		try {
-			discoveryDocumentURL = new URL(this.discoveryDocumentURL);
-		} catch (final MalformedURLException e) {
-			throw new LifecycleException("OpenIDConnectAuthenticator's"
-					+ " discoveryDocumentURL property is invalid.", e);
-		}
-		try {
-			this.opConfig = new OpenIDConfiguration(
-					new JSONObject(new JSONTokener(new StringReader(
-							this.httpGet(discoveryDocumentURL,
-									"application/json")))));
-		} catch (final JSONException | IOException e) {
+			for (final OPDescriptor opDesc : opDescs)
+				this.ops.getOPConfiguration(opDesc.getIssuer());
+		} catch (final IOException | JSONException e) {
 			throw new LifecycleException("OpenIDConnectAuthenticator could not"
-					+ " load OpenID Connect provider configuration from "
-					+ discoveryDocumentURL + ".", e);
+					+ " load OpenID Connect Provider configuration.", e);
 		}
 
 		// proceed with initialization
@@ -314,7 +312,247 @@ public class OpenIDConnectAuthenticator
 	 * See overridden method.
 	 */
 	@Override
-	public boolean doAuthenticate(final Request request,
+	protected boolean doAuthenticate(final Request request,
+			final HttpServletResponse response) throws IOException {
+
+		final boolean debug = this.log.isDebugEnabled();
+
+		// check if already authenticated
+		if (this.checkForCachedAuthentication(request, response, true))
+			return true;
+
+		// the session
+		Session session = null;
+
+		// check if caching principal is disabled, but we have reauth info
+		if (!this.cache) {
+
+			// get/start session
+			session = request.getSessionInternal(true);
+
+			if (debug)
+				this.log.debug("checking for reauthenticate in session "
+						+ session);
+
+			// check if auth info is in the session
+			final String username =
+				(String) session.getNote(Constants.SESS_USERNAME_NOTE);
+			if (username != null) {
+
+				Principal principal = null;
+
+				final String issuer =
+					(String) session.getNote(SESS_OIDC_ISSUER_NOTE);
+				final String password =
+					(String) session.getNote(Constants.SESS_PASSWORD_NOTE);
+
+				// get the principal from the realm
+				if (issuer != null) {
+					if (debug)
+						this.log.debug("reauthenticating username \""
+								+ username + "\" authenticated by " + issuer);
+					principal =
+						this.context.getRealm().authenticate(username);
+				} else if (password != null) {
+					if (debug)
+						this.log.debug("reauthenticating username \""
+								+ username + "\" using password");
+					principal =
+						this.context.getRealm().authenticate(
+								username, password);
+				}
+
+				// complete if successfully reauthenticated
+				if (principal != null) {
+					session.setNote(Constants.FORM_PRINCIPAL_NOTE, principal);
+					if (!this.matchRequest(request)) {
+						this.register(request, response, principal,
+								HttpServletRequest.FORM_AUTH, username,
+								password);
+						return true;
+					}
+				}
+
+				// failed reauthentication
+				if (debug)
+					this.log.debug("reauthentication failed, proceed normally");
+			}
+		}
+
+		// check if resubmit after successful authentication
+		if (this.matchRequest(request)) {
+
+			// get session
+			if (session == null)
+				session = request.getSessionInternal(true);
+			if (debug)
+				this.log.debug("restore request from session "
+						+ session.getIdInternal());
+
+			// get authenticated principal and register it on the request
+			final Principal principal =
+				(Principal) session.getNote(Constants.FORM_PRINCIPAL_NOTE);
+			this.register(request, response, principal,
+					HttpServletRequest.FORM_AUTH,
+					(String) session.getNote(Constants.SESS_USERNAME_NOTE),
+					(String) session.getNote(Constants.SESS_PASSWORD_NOTE));
+
+			// if principal is cached, remove auth info from the session
+			if (this.cache) {
+				session.removeNote(Constants.SESS_USERNAME_NOTE);
+				session.removeNote(Constants.SESS_PASSWORD_NOTE);
+				session.removeNote(SESS_OIDC_ISSUER_NOTE);
+			}
+
+			// restore original request
+			if (this.restoreRequest(request, session)) {
+				if (debug)
+					this.log.debug("proceed to restored request");
+				return true;
+			} else {
+				if (debug)
+					this.log.debug("restore of original request failed");
+				response.sendError(HttpServletResponse.SC_BAD_REQUEST);
+				return false;
+			}
+		}
+
+        // Acquire references to objects we will need to evaluate
+        String contextPath = request.getContextPath();
+        String requestURI = request.getDecodedRequestURI();
+
+        // Is this the action request from the login page?
+        boolean loginAction =
+            requestURI.startsWith(contextPath) &&
+            requestURI.endsWith(Constants.FORM_ACTION);
+
+        LoginConfig config = context.getLoginConfig();
+
+        // No -- Save this request and redirect to the form login page
+        if (!loginAction) {
+            // If this request was to the root of the context without a trailing
+            // '/', need to redirect to add it else the submit of the login form
+            // may not go to the correct web application
+            if (request.getServletPath().length() == 0 && request.getPathInfo() == null) {
+                StringBuilder location = new StringBuilder(requestURI);
+                location.append('/');
+                if (request.getQueryString() != null) {
+                    location.append('?');
+                    location.append(request.getQueryString());
+                }
+                response.sendRedirect(response.encodeRedirectURL(location.toString()));
+                return false;
+            }
+
+            session = request.getSessionInternal(true);
+            if (log.isDebugEnabled()) {
+                log.debug("Save request in session '" + session.getIdInternal() + "'");
+            }
+            try {
+                saveRequest(request, session);
+            } catch (IOException ioe) {
+                log.debug("Request body too big to save during authentication");
+                response.sendError(HttpServletResponse.SC_FORBIDDEN,
+                        sm.getString("authenticator.requestBodyTooBig"));
+                return false;
+            }
+            forwardToLoginPage(request, response, config);
+            return false;
+        }
+
+        // Yes -- Acknowledge the request, validate the specified credentials
+        // and redirect to the error page if they are not correct
+        request.getResponse().sendAcknowledgement();
+        Realm realm = context.getRealm();
+        if (characterEncoding != null) {
+            request.setCharacterEncoding(characterEncoding);
+        }
+        String username = request.getParameter(Constants.FORM_USERNAME);
+        String password = request.getParameter(Constants.FORM_PASSWORD);
+        if (log.isDebugEnabled()) {
+            log.debug("Authenticating username '" + username + "'");
+        }
+        principal = realm.authenticate(username, password);
+        if (principal == null) {
+            forwardToErrorPage(request, response, config);
+            return false;
+        }
+
+        if (log.isDebugEnabled()) {
+            log.debug("Authentication of '" + username + "' was successful");
+        }
+
+        if (session == null) {
+            session = request.getSessionInternal(false);
+        }
+        if (session == null) {
+            if (containerLog.isDebugEnabled()) {
+                containerLog.debug
+                    ("User took so long to log on the session expired");
+            }
+            if (landingPage == null) {
+                response.sendError(HttpServletResponse.SC_REQUEST_TIMEOUT,
+                        sm.getString("authenticator.sessionExpired"));
+            } else {
+                // Make the authenticator think the user originally requested
+                // the landing page
+                String uri = request.getContextPath() + landingPage;
+                SavedRequest saved = new SavedRequest();
+                saved.setMethod("GET");
+                saved.setRequestURI(uri);
+                saved.setDecodedRequestURI(uri);
+                request.getSessionInternal(true).setNote(
+                        Constants.FORM_REQUEST_NOTE, saved);
+                response.sendRedirect(response.encodeRedirectURL(uri));
+            }
+            return false;
+        }
+
+        // Save the authenticated Principal in our session
+        session.setNote(Constants.FORM_PRINCIPAL_NOTE, principal);
+
+        // Save the username and password as well
+        session.setNote(Constants.SESS_USERNAME_NOTE, username);
+        session.setNote(Constants.SESS_PASSWORD_NOTE, password);
+
+        // Redirect the user to the original request URI (which will cause
+        // the original request to be restored)
+        requestURI = savedRequestURL(session);
+        if (log.isDebugEnabled()) {
+            log.debug("Redirecting to original '" + requestURI + "'");
+        }
+        if (requestURI == null) {
+            if (landingPage == null) {
+                response.sendError(HttpServletResponse.SC_BAD_REQUEST,
+                        sm.getString("authenticator.formlogin"));
+            } else {
+                // Make the authenticator think the user originally requested
+                // the landing page
+                String uri = request.getContextPath() + landingPage;
+                SavedRequest saved = new SavedRequest();
+                saved.setMethod("GET");
+                saved.setRequestURI(uri);
+                saved.setDecodedRequestURI(uri);
+                session.setNote(Constants.FORM_REQUEST_NOTE, saved);
+                response.sendRedirect(response.encodeRedirectURL(uri));
+            }
+        } else {
+            // Until the Servlet API allows specifying the type of redirect to
+            // use.
+            Response internalResponse = request.getResponse();
+            String location = response.encodeRedirectURL(requestURI);
+            if ("HTTP/1.1".equals(request.getProtocol())) {
+                internalResponse.sendRedirect(location,
+                        HttpServletResponse.SC_SEE_OTHER);
+            } else {
+                internalResponse.sendRedirect(location,
+                        HttpServletResponse.SC_FOUND);
+            }
+        }
+        return false;
+	}
+
+	public boolean doAuthenticate1(final Request request,
 			final HttpServletResponse response)
 		throws IOException {
 
