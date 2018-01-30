@@ -8,7 +8,7 @@ package org.bsworks.util.json;
  * @author Lev Himmelfarb
  */
 public class JSONException
-	extends Exception {
+	extends RuntimeException {
 
 	/**
 	 * Serial version id.

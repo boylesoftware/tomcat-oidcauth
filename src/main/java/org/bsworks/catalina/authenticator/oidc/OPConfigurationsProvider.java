@@ -13,7 +13,6 @@ import java.util.regex.Pattern;
 
 import org.apache.juli.logging.Log;
 import org.apache.juli.logging.LogFactory;
-import org.bsworks.util.json.JSONException;
 import org.bsworks.util.json.JSONObject;
 import org.bsworks.util.json.JSONTokener;
 
@@ -119,11 +118,9 @@ class OPConfigurationsProvider {
 	 * @throws IllegalArgumentException If the issuer ID is unknown.
 	 * @throws IOException If an I/O error happens loading the OP configuration
 	 * document.
-	 * @throws JSONException If the OP configuration document JSON cannot be
-	 * parsed.
 	 */
 	OPConfiguration getOPConfiguration(final String issuer)
-			throws IOException, JSONException {
+		throws IOException {
 
 		// get cached configuration, or load it if not yet loaded
 		CachedOPConfiguration cacheEl = this.cache.get(issuer);
@@ -139,9 +136,9 @@ class OPConfigurationsProvider {
 		}
 
 		// check the cached configuration expiration
-		if (cacheEl.expireAt > System.currentTimeMillis() - EXP_GAP) {
+		if (System.currentTimeMillis() > cacheEl.expireAt - EXP_GAP) {
 			synchronized (cacheEl) {
-				if (cacheEl.expireAt > System.currentTimeMillis() - EXP_GAP)
+				if (System.currentTimeMillis() > cacheEl.expireAt - EXP_GAP)
 					this.loadOPConfiguration(issuer, cacheEl);
 			}
 		}
@@ -160,11 +157,10 @@ class OPConfigurationsProvider {
 	 * @throws IllegalArgumentException If the issuer ID is unknown.
 	 * @throws IOException If an I/O error happens loading the document from the
 	 * URL.
-	 * @throws JSONException If the document JSON cannot be parsed.
 	 */
-	private void loadOPConfiguration(
-			final String issuer, final CachedOPConfiguration cacheEl)
-			throws IOException, JSONException {
+	private void loadOPConfiguration(final String issuer,
+			final CachedOPConfiguration cacheEl)
+		throws IOException {
 
 		// get OP descriptor
 		final OPDescriptor opDesc = this.opDescs.get(issuer);

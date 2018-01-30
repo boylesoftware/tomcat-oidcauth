@@ -18,8 +18,11 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Enumeration;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
@@ -57,6 +60,142 @@ public class OpenIDConnectAuthenticator
 	extends FormAuthenticator {
 
 	/**
+	 * Authorization endpoint descriptor for the login page.
+	 */
+	public static final class AuthEndpointDesc {
+
+		/**
+		 * Issuer ID.
+		 */
+		private final String issuer;
+
+		/**
+		 * Endpoint URL.
+		 */
+		private final String url;
+
+
+		/**
+		 * Create new descriptor.
+		 *
+		 * @param issuer Issuer ID.
+		 * @param url Endpoint URL.
+		 */
+		AuthEndpointDesc(final String issuer, final String url) {
+
+			this.issuer = issuer;
+			this.url = url;
+		}
+
+
+		/**
+		 * Get issuer ID.
+		 *
+		 * @return The issuer ID.
+		 */
+		public String getIssuer() {
+
+			return this.issuer;
+		}
+
+		/**
+		 * Get endpoint URL.
+		 *
+		 * @return The URL.
+		 */
+		public String getUrl() {
+
+			return this.url;
+		}
+	}
+
+
+	/**
+	 * Authentication error descriptor for the error page.
+	 */
+	public static final class AuthErrorDesc {
+
+		/**
+		 * Error code.
+		 */
+		final String code;
+
+		/**
+		 * Optional error description.
+		 */
+		final String description;
+
+		/**
+		 * Optional URI of the page with the error information.
+		 */
+		final String infoPageURI;
+
+
+		/**
+		 * Create new descriptor.
+		 *
+		 * @param request The request representing the error response.
+		 */
+		AuthErrorDesc(final Request request) {
+
+			this.code = request.getParameter("error");
+			this.description = request.getParameter("error_description");
+			this.infoPageURI = request.getParameter("error_uri");
+		}
+
+
+		/**
+		 * Get error code.
+		 *
+		 * @return The code.
+		 */
+		public String getCode() {
+
+			return this.code;
+		}
+
+		/**
+		 * Get optional error description.
+		 *
+		 * @return The description, or {@code null}.
+		 */
+		public String getDescription() {
+
+			return this.description;
+		}
+
+		/**
+		 * Get optional URI of the page containing the error information.
+		 *
+		 * @return The page URI, or {@code null}.
+		 */
+		public String getInfoPageURI() {
+
+			return this.infoPageURI;
+		}
+	}
+
+
+	/**
+	 * Name of request attribute made available to the login page that maps
+	 * configured OP issuer IDs to the corresponding authorization endpoint
+	 * URLs.
+	 */
+	public static final String AUTHEPS_ATT = "org.bsworks.oidc.authEndpoints";
+
+	/**
+	 * Name of request attribute made available to the login page that tells if
+	 * the form-based authentication is disabled.
+	 */
+	public static final String NOFORM_ATT = "org.bsworks.oidc.noForm";
+
+	/**
+	 * Name of the request attribute made available on the login error page that
+	 * contains the error descriptor.
+	 */
+	public static final String AUTHERROR_ATT = "org.bsworks.oidc.error";
+
+	/**
 	 * UTF-8 charset.
 	 */
 	private static final Charset UTF8 = Charset.forName("UTF-8");
@@ -67,6 +206,12 @@ public class OpenIDConnectAuthenticator
 	 */
 	private static final String SESS_OIDC_ISSUER_NOTE =
 		"org.bsworks.catalina.session.ISSUER";
+
+	/**
+	 * Pattern for the state parameter.
+	 */
+	private static final Pattern STATE_PATTERN = Pattern.compile(
+			"^(\\d+)Z(.+)");
 
 
 	/**
@@ -110,6 +255,11 @@ public class OpenIDConnectAuthenticator
 	 * HTTP read timeout for OP endpoints.
 	 */
 	protected int httpReadTimeout = 5000;
+
+	/**
+	 * Configured OpenID Connect Provider descriptors.
+	 */
+	private List<OPDescriptor> opDescs;
 
 	/**
 	 * OpenID Connect Provider configurations provider.
@@ -290,14 +440,14 @@ public class OpenIDConnectAuthenticator
 
 		// parse provider definitions and create the configurations provider
 		final String[] opDefs = this.providers.trim().split("\\s+");
-		final List<OPDescriptor> opDescs = new ArrayList<>(opDefs.length);
+		this.opDescs = new ArrayList<>(opDefs.length);
 		for (final String opDef : opDefs)
-			opDescs.add(new OPDescriptor(opDef));
-		this.ops = new OPConfigurationsProvider(opDescs);
+			this.opDescs.add(new OPDescriptor(opDef));
+		this.ops = new OPConfigurationsProvider(this.opDescs);
 
 		// preload provider configurations and detect any errors
 		try {
-			for (final OPDescriptor opDesc : opDescs)
+			for (final OPDescriptor opDesc : this.opDescs)
 				this.ops.getOPConfiguration(opDesc.getIssuer());
 		} catch (final IOException | JSONException e) {
 			throw new LifecycleException("OpenIDConnectAuthenticator could not"
@@ -313,7 +463,8 @@ public class OpenIDConnectAuthenticator
 	 */
 	@Override
 	protected boolean doAuthenticate(final Request request,
-			final HttpServletResponse response) throws IOException {
+			final HttpServletResponse response)
+		throws IOException {
 
 		final boolean debug = this.log.isDebugEnabled();
 
@@ -321,238 +472,485 @@ public class OpenIDConnectAuthenticator
 		if (this.checkForCachedAuthentication(request, response, true))
 			return true;
 
-		// the session
-		Session session = null;
+		// try to reauthenticate if caching principal is disabled
+		if (!this.cache && this.reauthenticateNoCache(request, response))
+			return true;
 
-		// check if caching principal is disabled, but we have reauth info
-		if (!this.cache) {
+		// check if resubmit after successful authentication
+		if (this.matchRequest(request))
+			return this.processResubmit(request, response);
 
-			// get/start session
-			session = request.getSessionInternal(true);
+		// the request is not authenticated:
 
-			if (debug)
-				this.log.debug("checking for reauthenticate in session "
-						+ session);
+		// determine if authentication submission
+		final String requestURI = request.getDecodedRequestURI();
+		final boolean loginAction = (
+				requestURI.startsWith(request.getContextPath()) &&
+				requestURI.endsWith(Constants.FORM_ACTION));
 
-			// check if auth info is in the session
-			final String username =
-				(String) session.getNote(Constants.SESS_USERNAME_NOTE);
-			if (username != null) {
-
-				Principal principal = null;
-
-				final String issuer =
-					(String) session.getNote(SESS_OIDC_ISSUER_NOTE);
-				final String password =
-					(String) session.getNote(Constants.SESS_PASSWORD_NOTE);
-
-				// get the principal from the realm
-				if (issuer != null) {
-					if (debug)
-						this.log.debug("reauthenticating username \""
-								+ username + "\" authenticated by " + issuer);
-					principal =
-						this.context.getRealm().authenticate(username);
-				} else if (password != null) {
-					if (debug)
-						this.log.debug("reauthenticating username \""
-								+ username + "\" using password");
-					principal =
-						this.context.getRealm().authenticate(
-								username, password);
-				}
-
-				// complete if successfully reauthenticated
-				if (principal != null) {
-					session.setNote(Constants.FORM_PRINCIPAL_NOTE, principal);
-					if (!this.matchRequest(request)) {
-						this.register(request, response, principal,
-								HttpServletRequest.FORM_AUTH, username,
-								password);
-						return true;
-					}
-				}
-
-				// failed reauthentication
-				if (debug)
-					this.log.debug("reauthentication failed, proceed normally");
-			}
+		// check if regular unauthenticated request, not a submission
+		if (!loginAction) {
+			this.processUnauthenticated(request, response);
+			return false;
 		}
+
+		// authentication submission (either form or OP response redirect):
+
+		// acknowledge the request
+		request.getResponse().sendAcknowledgement();
+
+		// set response character encoding
+		if (this.characterEncoding != null)
+			request.setCharacterEncoding(this.characterEncoding);
+
+		// get current session and check if expired
+		final Session session = request.getSessionInternal(false);
+		if (session == null) {
+
+			// log using container log (why container?)
+			if (this.containerLog.isDebugEnabled())
+				this.containerLog.debug(
+						"user took so long to log on the session expired");
+
+			// redirect to the configured landing page, if any
+			if (!this.redirectToLandingPage(request, response))
+				response.sendError(HttpServletResponse.SC_REQUEST_TIMEOUT,
+						sm.getString("authenticator.sessionExpired"));
+
+			// done, authentication failure
+			return false;
+		}
+
+		// the authenticated principal
+		Principal principal = null;
+
+		// check if OIDC authentication response or form submission
+		if ((request.getParameter("code") != null)
+				|| (request.getParameter("error") != null)) {
+			principal = this.processAuthResponse(session,
+					request);
+		} else if (!this.noForm) { // form submission
+			principal = this.processAuthFormSubmission(session,
+					request.getParameter(Constants.FORM_USERNAME),
+					request.getParameter(Constants.FORM_PASSWORD));
+		}
+
+		// check if authentication failure
+		if (principal == null) {
+			this.forwardToErrorPage(request, response,
+					this.context.getLoginConfig());
+			return false;
+		}
+
+		// successful authentication
+		if (debug)
+			this.log.debug("authentication of \"" + principal.getName()
+				+ "\" was successful");
+
+		// save the authenticated principal in our session
+		session.setNote(Constants.FORM_PRINCIPAL_NOTE, principal);
+
+		// get the original unauthenticated request URI
+		final String origRequestURI = savedRequestURL(session);
+		if (debug)
+			this.log.debug("redirecting to original URI: " + origRequestURI);
+
+		// if (somehow!) original URI is unavailable, go to the landing page
+		if (origRequestURI == null) {
+			if (!this.redirectToLandingPage(request, response))
+				response.sendError(HttpServletResponse.SC_BAD_REQUEST,
+						sm.getString("authenticator.formlogin"));
+			return false;
+		}
+
+		// redirect to the original URI
+		request.getResponse().sendRedirect(
+				response.encodeRedirectURL(origRequestURI),
+				("HTTP/1.1".equals(request.getProtocol()) ?
+						HttpServletResponse.SC_SEE_OTHER :
+							HttpServletResponse.SC_FOUND));
+
+		// done, will be authenticated after the redirect
+		return false;
+	}
+
+	/**
+	 * If caching principal on the session by the authenticator is disabled,
+	 * check if the session has authentication information (username, password
+	 * or OP issuer ID) and if so, reauthenticate the user.
+	 *
+	 * @param request The request.
+	 * @param response The response.
+	 *
+	 * @return {@code true} if was successfully reauthenticated and not further
+	 * authentication action is required. If authentication logic should
+	 * proceed, returns {@code false}.
+	 */
+	protected boolean reauthenticateNoCache(final Request request,
+			final HttpServletResponse response) {
+
+		// get session
+		final Session session = request.getSessionInternal(true);
+
+		final boolean debug = this.log.isDebugEnabled();
+		if (debug)
+			this.log.debug("checking for reauthenticate in session "
+					+ session.getIdInternal());
+
+		// check if authentication info is in the session
+		final String username =
+			(String) session.getNote(Constants.SESS_USERNAME_NOTE);
+		if (username == null)
+			return false;
+
+		// get the rest of the authentication info
+		final String issuer =
+			(String) session.getNote(SESS_OIDC_ISSUER_NOTE);
+		final String password =
+			(String) session.getNote(Constants.SESS_PASSWORD_NOTE);
+
+		// get the principal from the realm (try to reauthenticate)
+		Principal principal = null;
+		if (issuer != null) { // was authenticated using OpenID Connect
+			if (debug)
+				this.log.debug("reauthenticating username \""
+						+ username + "\" authenticated by " + issuer);
+			principal = this.context.getRealm().authenticate(
+					username);
+		} else if (password != null) { // was form-based authentication
+			if (debug)
+				this.log.debug("reauthenticating username \""
+						+ username + "\" using password");
+			principal = this.context.getRealm().authenticate(
+					username, password);
+		}
+
+		// check if could not reauthenticate
+		if (principal == null) {
+			if (debug)
+				this.log.debug("reauthentication failed, proceed normally");
+			return false;
+		}
+
+		// set principal on the session
+		session.setNote(Constants.FORM_PRINCIPAL_NOTE, principal);
 
 		// check if resubmit after successful authentication
 		if (this.matchRequest(request)) {
-
-			// get session
-			if (session == null)
-				session = request.getSessionInternal(true);
 			if (debug)
-				this.log.debug("restore request from session "
-						+ session.getIdInternal());
-
-			// get authenticated principal and register it on the request
-			final Principal principal =
-				(Principal) session.getNote(Constants.FORM_PRINCIPAL_NOTE);
-			this.register(request, response, principal,
-					HttpServletRequest.FORM_AUTH,
-					(String) session.getNote(Constants.SESS_USERNAME_NOTE),
-					(String) session.getNote(Constants.SESS_PASSWORD_NOTE));
-
-			// if principal is cached, remove auth info from the session
-			if (this.cache) {
-				session.removeNote(Constants.SESS_USERNAME_NOTE);
-				session.removeNote(Constants.SESS_PASSWORD_NOTE);
-				session.removeNote(SESS_OIDC_ISSUER_NOTE);
-			}
-
-			// restore original request
-			if (this.restoreRequest(request, session)) {
-				if (debug)
-					this.log.debug("proceed to restored request");
-				return true;
-			} else {
-				if (debug)
-					this.log.debug("restore of original request failed");
-				response.sendError(HttpServletResponse.SC_BAD_REQUEST);
-				return false;
-			}
+				this.log.debug("reauthenticated username \"" + username
+						+ "\" for resubmit after successful authentication");
+			return false;
 		}
 
-        // Acquire references to objects we will need to evaluate
-        String contextPath = request.getContextPath();
-        String requestURI = request.getDecodedRequestURI();
+		// successfully reauthenticated, register the principal
+		if (debug)
+			this.log.debug("successfully reauthenticated username \""
+					+ username + "\"");
+		this.register(request, response, principal,
+				HttpServletRequest.FORM_AUTH, username, password);
 
-        // Is this the action request from the login page?
-        boolean loginAction =
-            requestURI.startsWith(contextPath) &&
-            requestURI.endsWith(Constants.FORM_ACTION);
-
-        LoginConfig config = context.getLoginConfig();
-
-        // No -- Save this request and redirect to the form login page
-        if (!loginAction) {
-            // If this request was to the root of the context without a trailing
-            // '/', need to redirect to add it else the submit of the login form
-            // may not go to the correct web application
-            if (request.getServletPath().length() == 0 && request.getPathInfo() == null) {
-                StringBuilder location = new StringBuilder(requestURI);
-                location.append('/');
-                if (request.getQueryString() != null) {
-                    location.append('?');
-                    location.append(request.getQueryString());
-                }
-                response.sendRedirect(response.encodeRedirectURL(location.toString()));
-                return false;
-            }
-
-            session = request.getSessionInternal(true);
-            if (log.isDebugEnabled()) {
-                log.debug("Save request in session '" + session.getIdInternal() + "'");
-            }
-            try {
-                saveRequest(request, session);
-            } catch (IOException ioe) {
-                log.debug("Request body too big to save during authentication");
-                response.sendError(HttpServletResponse.SC_FORBIDDEN,
-                        sm.getString("authenticator.requestBodyTooBig"));
-                return false;
-            }
-            forwardToLoginPage(request, response, config);
-            return false;
-        }
-
-        // Yes -- Acknowledge the request, validate the specified credentials
-        // and redirect to the error page if they are not correct
-        request.getResponse().sendAcknowledgement();
-        Realm realm = context.getRealm();
-        if (characterEncoding != null) {
-            request.setCharacterEncoding(characterEncoding);
-        }
-        String username = request.getParameter(Constants.FORM_USERNAME);
-        String password = request.getParameter(Constants.FORM_PASSWORD);
-        if (log.isDebugEnabled()) {
-            log.debug("Authenticating username '" + username + "'");
-        }
-        principal = realm.authenticate(username, password);
-        if (principal == null) {
-            forwardToErrorPage(request, response, config);
-            return false;
-        }
-
-        if (log.isDebugEnabled()) {
-            log.debug("Authentication of '" + username + "' was successful");
-        }
-
-        if (session == null) {
-            session = request.getSessionInternal(false);
-        }
-        if (session == null) {
-            if (containerLog.isDebugEnabled()) {
-                containerLog.debug
-                    ("User took so long to log on the session expired");
-            }
-            if (landingPage == null) {
-                response.sendError(HttpServletResponse.SC_REQUEST_TIMEOUT,
-                        sm.getString("authenticator.sessionExpired"));
-            } else {
-                // Make the authenticator think the user originally requested
-                // the landing page
-                String uri = request.getContextPath() + landingPage;
-                SavedRequest saved = new SavedRequest();
-                saved.setMethod("GET");
-                saved.setRequestURI(uri);
-                saved.setDecodedRequestURI(uri);
-                request.getSessionInternal(true).setNote(
-                        Constants.FORM_REQUEST_NOTE, saved);
-                response.sendRedirect(response.encodeRedirectURL(uri));
-            }
-            return false;
-        }
-
-        // Save the authenticated Principal in our session
-        session.setNote(Constants.FORM_PRINCIPAL_NOTE, principal);
-
-        // Save the username and password as well
-        session.setNote(Constants.SESS_USERNAME_NOTE, username);
-        session.setNote(Constants.SESS_PASSWORD_NOTE, password);
-
-        // Redirect the user to the original request URI (which will cause
-        // the original request to be restored)
-        requestURI = savedRequestURL(session);
-        if (log.isDebugEnabled()) {
-            log.debug("Redirecting to original '" + requestURI + "'");
-        }
-        if (requestURI == null) {
-            if (landingPage == null) {
-                response.sendError(HttpServletResponse.SC_BAD_REQUEST,
-                        sm.getString("authenticator.formlogin"));
-            } else {
-                // Make the authenticator think the user originally requested
-                // the landing page
-                String uri = request.getContextPath() + landingPage;
-                SavedRequest saved = new SavedRequest();
-                saved.setMethod("GET");
-                saved.setRequestURI(uri);
-                saved.setDecodedRequestURI(uri);
-                session.setNote(Constants.FORM_REQUEST_NOTE, saved);
-                response.sendRedirect(response.encodeRedirectURL(uri));
-            }
-        } else {
-            // Until the Servlet API allows specifying the type of redirect to
-            // use.
-            Response internalResponse = request.getResponse();
-            String location = response.encodeRedirectURL(requestURI);
-            if ("HTTP/1.1".equals(request.getProtocol())) {
-                internalResponse.sendRedirect(location,
-                        HttpServletResponse.SC_SEE_OTHER);
-            } else {
-                internalResponse.sendRedirect(location,
-                        HttpServletResponse.SC_FOUND);
-            }
-        }
-        return false;
+		// no further authentication action required
+		return true;
 	}
 
-	public boolean doAuthenticate1(final Request request,
+	/**
+	 * Process original request resubmit after successful authentication.
+	 *
+	 * @param request The request.
+	 * @param response The response.
+	 *
+	 * @return {@code true} if success, {@code false} if failure, in which case
+	 * an HTTP 400 response is sent back by this method.
+	 *
+	 * @throws IOException If an I/O error happens communicating with the
+	 * client.
+	 */
+	protected boolean processResubmit(final Request request,
+			final HttpServletResponse response)
+		throws IOException {
+
+		// get session
+		final Session session = request.getSessionInternal(true);
+
+		final boolean debug = this.log.isDebugEnabled();
+		if (debug)
+			this.log.debug("restore request from session "
+					+ session.getIdInternal());
+
+		// get authenticated principal and register it on the request
+		final Principal principal =
+			(Principal) session.getNote(Constants.FORM_PRINCIPAL_NOTE);
+		this.register(request, response, principal,
+				HttpServletRequest.FORM_AUTH,
+				(String) session.getNote(Constants.SESS_USERNAME_NOTE),
+				(String) session.getNote(Constants.SESS_PASSWORD_NOTE));
+
+		// if principal is cached, remove authentication info from the session
+		if (this.cache) {
+			session.removeNote(Constants.SESS_USERNAME_NOTE);
+			session.removeNote(Constants.SESS_PASSWORD_NOTE);
+			session.removeNote(SESS_OIDC_ISSUER_NOTE);
+		}
+
+		// try to restore original request
+		if (!this.restoreRequest(request, session)) {
+			if (debug)
+				this.log.debug("restore of original request failed");
+			response.sendError(HttpServletResponse.SC_BAD_REQUEST);
+			return false;
+		}
+
+		// all good, no further authentication action is required
+		if (debug)
+			this.log.debug("proceed to restored request");
+		return true;
+	}
+
+	/**
+	 * Process regular unauthenticated request. Normally, saves the request in
+	 * the session and forwards to the configured login page.
+	 *
+	 * @param request The request.
+	 * @param response The response.
+	 *
+	 * @throws IOException If an I/O error happens communicating with the
+	 * client.
+	 */
+	protected void processUnauthenticated(final Request request,
+			final HttpServletResponse response)
+		throws IOException {
+
+		// If this request was to the root of the context without a trailing
+		// "/", need to redirect to add it else the submit of the login form
+		// may not go to the correct web application
+		if ((request.getServletPath().length() == 0)
+				&& (request.getPathInfo() == null)) {
+			final StringBuilder location = new StringBuilder(
+					request.getDecodedRequestURI());
+			location.append('/');
+			if (request.getQueryString() != null)
+				location.append('?').append(request.getQueryString());
+			response.sendRedirect(
+					response.encodeRedirectURL(location.toString()));
+			return;
+		}
+
+		// get session
+		final Session session = request.getSessionInternal(true);
+
+		final boolean debug = this.log.isDebugEnabled();
+		if (debug)
+			this.log.debug("save request in session "
+					+ session.getIdInternal());
+
+		// save original request in the session before forwarding to the login
+		try {
+			this.saveRequest(request, session);
+		} catch (final IOException e) {
+			this.log.debug("could not save request during authentication", e);
+			response.sendError(HttpServletResponse.SC_FORBIDDEN,
+					sm.getString("authenticator.requestBodyTooBig"));
+			return;
+		}
+
+		// forward to the login page
+		this.forwardToLoginPage(request, response,
+				this.context.getLoginConfig());
+	}
+
+	/* (non-Javadoc)
+	 * See overridden method.
+	 */
+	@Override
+	protected void forwardToLoginPage(final Request request,
+			final HttpServletResponse response, final LoginConfig config)
+		throws IOException {
+
+		// add OP authorization endpoints to the request for the login page
+		final List<AuthEndpointDesc> authEndpoints = new ArrayList<>();
+		final StringBuffer buf = new StringBuffer(128);
+		for (int i = 0; i < this.opDescs.size(); i++) {
+			final OPDescriptor opDesc = this.opDescs.get(i);
+
+			// get the OP configuration
+			final String issuer = opDesc.getIssuer();
+			final OPConfiguration opConfig =
+				this.ops.getOPConfiguration(issuer);
+
+			// construct the authorization endpoint URL
+			buf.setLength(0);
+			buf.append(opConfig.getAuthorizationEndpoint());
+			buf.append("?scope=openid");
+			if (this.additionalScopes != null)
+				buf.append(URLEncoder.encode(
+						" " + this.additionalScopes, UTF8.name()));
+			buf.append("&response_type=code");
+			buf.append("&client_id=").append(URLEncoder.encode(
+					opDesc.getClientId(), UTF8.name()));
+			buf.append("&redirect_uri=").append(URLEncoder.encode(
+					this.getBaseURL(request) + Constants.FORM_ACTION,
+					UTF8.name()));
+			buf.append("&state=").append(i).append('Z').append(
+					URLEncoder.encode(
+							request.getSessionInternal().getIdInternal(),
+							UTF8.name()));
+			final String addlParams = opDesc.getAdditionalAuthorizationParams();
+			if (addlParams != null)
+				buf.append('&').append(addlParams);
+
+			// add the URL to the map
+			authEndpoints.add(new AuthEndpointDesc(issuer, buf.toString()));
+		}
+		request.setAttribute(AUTHEPS_ATT, authEndpoints);
+
+		// add no form flag to the request
+		request.setAttribute(NOFORM_ATT, Boolean.valueOf(this.noForm));
+
+		// proceed to the login page
+		super.forwardToLoginPage(request, response, config);
+	}
+
+	/**
+	 * Process login form submission.
+	 *
+	 * @param session The session.
+	 * @param username Submitted username.
+	 * @param password Submitted password.
+	 *
+	 * @return The authenticated principal, or {@code null} if login failure.
+	 */
+	protected Principal processAuthFormSubmission(final Session session,
+			final String username, final String password) {
+
+		if (this.log.isDebugEnabled())
+			this.log.debug("authenticating username \"" + username
+					+ "\" using password");
+
+		// authenticate principal in the realm
+		final Principal principal =
+			this.context.getRealm().authenticate(username, password);
+
+		// save authentication info in the session
+		if (principal != null) {
+			session.setNote(Constants.SESS_USERNAME_NOTE, username);
+			session.setNote(Constants.SESS_PASSWORD_NOTE, password);
+		}
+
+		// return the principal
+		return principal;
+	}
+
+	protected Principal processAuthResponse(final Session session,
+			final Request request)
+		throws IOException {
+
+		final boolean debug = this.log.isDebugEnabled();
+		if (debug)
+			this.log.debug("authenticating user using OpenID Connect"
+					+ " authentication response");
+
+		// parse the state
+		final String state = request.getParameter("state");
+		if (state == null) {
+			if (debug)
+				this.log.debug("no state in the authentication response");
+			return null;
+		}
+		final Matcher m = STATE_PATTERN.matcher(state);
+		if (!m.find()) {
+			if (debug)
+				this.log.debug("invalid state value in the authentication"
+						+ " response");
+			return null;
+		}
+		final int opInd = Integer.parseInt(m.group(1));
+		final String stateSessionId = m.group(2);
+
+		// get OP descriptor from the state
+		if (opInd >= this.opDescs.size()) {
+			if (debug)
+				this.log.debug("authentication response state contains invalid"
+						+ " OP index");
+			return null;
+		}
+		final OPDescriptor opDesc = this.opDescs.get(opInd);
+		final String issuer = opDesc.getIssuer();
+		if (debug)
+			this.log.debug("processing authentication response from " + issuer);
+
+		// match the session id from the state
+		if (!stateSessionId.equals(session.getIdInternal())) {
+			if (debug)
+				this.log.debug("authentication response state does not match"
+						+ " the session id");
+			return null;
+		}
+
+		// check if error response
+		final String errorCode = request.getParameter("error");
+		if (errorCode != null) {
+			if (debug)
+				this.log.debug("authentication error response: " + errorCode);
+			request.setAttribute(AUTHERROR_ATT, new AuthErrorDesc(request));
+			return null;
+		}
+
+		// get the OP configuration
+		final OPConfiguration opConfig = this.ops.getOPConfiguration(issuer);
+
+		// TODO:...
+		final Principal principal = null;
+
+		// save authentication info in the session
+		if (principal != null) {
+			session.setNote(Constants.SESS_USERNAME_NOTE, principal.getName());
+			session.setNote(SESS_OIDC_ISSUER_NOTE, issuer);
+		}
+
+		// return the principal
+		return principal;
+	}
+
+	/**
+	 * Redirect to the configured landing page, if any.
+	 *
+	 * @param request The request.
+	 * @param response The response.
+	 *
+	 * @return {@code true} if successfully redirected, {@code false} if no
+	 * landing page is configured.
+	 *
+	 * @throws IOException If an I/O error happens communicating with the
+	 * client.
+	 */
+	protected boolean redirectToLandingPage(final Request request,
+			final HttpServletResponse response)
+		throws IOException {
+
+		// do we have landing page configured?
+		if (this.landingPage == null)
+			return false;
+
+		// construct landing page URI
+		final String uri = request.getContextPath() + this.landingPage;
+
+		// make it think the user originally requested the landing page
+		final SavedRequest savedReq = new SavedRequest();
+		savedReq.setMethod("GET");
+		savedReq.setRequestURI(uri);
+		savedReq.setDecodedRequestURI(uri);
+		request.getSessionInternal(true).setNote(
+				Constants.FORM_REQUEST_NOTE, savedReq);
+
+		// send the redirect
+		response.sendRedirect(response.encodeRedirectURL(uri));
+
+		// done, success
+		return true;
+	}
+
+	/*public boolean doAuthenticate1(final Request request,
 			final HttpServletResponse response)
 		throws IOException {
 
@@ -692,7 +1090,7 @@ public class OpenIDConnectAuthenticator
 
 		// process the callback and return the result
 		return this.processAuthorizationServerCallback(request, response);
-	}
+	}*/
 
 	/**
 	 * Check if the request is already authenticated. If not, also check if can
@@ -702,7 +1100,7 @@ public class OpenIDConnectAuthenticator
 	 *
 	 * @return {@code true} if authenticated.
 	 */
-	protected boolean checkAuthenticated(final Request request) {
+	/*protected boolean checkAuthenticated(final Request request) {
 
 		final boolean debug = this.log.isDebugEnabled();
 
@@ -735,7 +1133,7 @@ public class OpenIDConnectAuthenticator
 
 		// no, not authenticated
 		return false;
-	}
+	}*/
 
 	/**
 	 * Respond with a redirect to the OpenID Connect provider authorization
@@ -746,7 +1144,7 @@ public class OpenIDConnectAuthenticator
 	 *
 	 * @throws IOException If an I/O error happens sending the response.
 	 */
-	protected void redirectToAuthorizationServer(final Request request,
+	/*protected void redirectToAuthorizationServer(final Request request,
 			final HttpServletResponse response)
 		throws IOException {
 
@@ -774,7 +1172,7 @@ public class OpenIDConnectAuthenticator
 			this.log.debug("redirecting to " + url);
 
 		response.sendRedirect(url);
-	}
+	}*/
 
 	/**
 	 * Process callback from the authorization server.
@@ -787,7 +1185,7 @@ public class OpenIDConnectAuthenticator
 	 *
 	 * @throws IOException If an I/O error happens sending the client response.
 	 */
-	protected boolean processAuthorizationServerCallback(final Request request,
+	/*protected boolean processAuthorizationServerCallback(final Request request,
 			final HttpServletResponse response)
 		throws IOException {
 
@@ -989,7 +1387,7 @@ public class OpenIDConnectAuthenticator
 
 		// redirect was sent in the response, don't proceed with the request
 		return false;
-	}
+	}*/
 
 	/**
 	 * Get web-application base URL (either from the {@code hostBaseURI}

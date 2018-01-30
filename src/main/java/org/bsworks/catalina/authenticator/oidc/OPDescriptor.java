@@ -65,7 +65,7 @@ class OPDescriptor {
 		try {
 			this.configurationDocumentUrl = new URL(
 					this.issuer + (this.issuer.endsWith("/") ? "" : "/") +
-					"./well-known/openid-configuration");
+					".well-known/openid-configuration");
 		} catch (final MalformedURLException e) {
 			throw new IllegalArgumentException(
 					"Invalid OP definition: the issuer identifier must be a" +
