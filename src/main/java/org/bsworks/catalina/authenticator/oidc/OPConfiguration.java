@@ -1,6 +1,8 @@
 package org.bsworks.catalina.authenticator.oidc;
 
-import java.util.Set;
+import java.io.IOException;
+import java.net.MalformedURLException;
+import java.net.URL;
 
 import org.bsworks.util.json.JSONObject;
 
@@ -28,62 +30,40 @@ class OPConfiguration {
 	private final String tokenEndpoint;
 
 	/**
-	 * JSON Web Key Set document URL.
+	 * The JWK set provider.
 	 */
-	private final String jwksUri;
+	private final ConfigProvider<JWKSet> jwksProvider;
 
 
 	/**
-	 * Create OpenID Connect provider configuration.
+	 * Construct OpenID Connect provider configuration from JSON document.
 	 *
-	 * @param discoveryDocument Discovery document.
+	 * @param document The JSON document.
+	 *
+	 * @throws IOException If an I/O error happens pre-loading the JWK set.
 	 */
-	OPConfiguration(final JSONObject discoveryDocument) {
+	OPConfiguration(final JSONObject document)
+		throws IOException {
 
-		this.issuer =
-			requiredStringProp(discoveryDocument, "issuer");
+		this.issuer = document.getString("issuer");
 		this.authorizationEndpoint =
-			requiredStringProp(discoveryDocument, "authorization_endpoint");
-		this.tokenEndpoint =
-			requiredStringProp(discoveryDocument, "token_endpoint");
-		// skip userinfo_endpoint
-		this.jwksUri =
-			requiredStringProp(discoveryDocument, "jwks_uri");
-		// skip registration_endpoint
-	}
+			document.getString("authorization_endpoint");
+		this.tokenEndpoint = document.getString("token_endpoint");
 
-	/**
-	 * Get required string property from the discovery document.
-	 *
-	 * @param container The container of the property, which is the discovery
-	 * document.
-	 * @param propName Property name.
-	 * @return Property value.
-	 * @throws IllegalArgumentException If the property does not exist.
-	 */
-	private static String requiredStringProp(
-			final JSONObject container, final String propName) {
-
-		final String value = container.getString(propName, null);
-		if (value == null)
-			throw new IllegalArgumentException("The discovery document does not"
-					+ " have \"" + propName + "\" property.");
-
-		return value;
-	}
-
-	/**
-	 * Get optional string property from the discovery document.
-	 *
-	 * @param container The container of the property, which is the discovery
-	 * document.
-	 * @param propName Property name.
-	 * @return Property value, or {@code null} if not present.
-	 */
-	private static String stringProp(
-			final JSONObject container, final String propName) {
-
-		return container.getString(propName, null);
+		final URL jwksUri;
+		try {
+			jwksUri = new URL(document.getString("jwks_uri"));
+		} catch (final MalformedURLException e) {
+			throw new IllegalArgumentException(
+					"Invalid JWKS URI in the OP configuration.", e);
+		}
+		this.jwksProvider = new ConfigProvider<JWKSet>(jwksUri) {
+			@Override
+			protected JWKSet parseDocument(final JSONObject jwksDocument) {
+				return new JWKSet(jwksDocument);
+			}
+		};
+		this.jwksProvider.get();
 	}
 
 	/**
@@ -114,5 +94,18 @@ class OPConfiguration {
 	String getTokenEndpoint() {
 
 		return this.tokenEndpoint;
+	}
+
+	/**
+	 * Get JWK set.
+	 *
+	 * @return The JWK set.
+	 *
+	 * @throws IOException If an I/O error happens loading the JWK set.
+	 */
+	JWKSet getJWKSet()
+		throws IOException {
+
+		return this.jwksProvider.get();
 	}
 }

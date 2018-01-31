@@ -48,7 +48,7 @@ class OPDescriptor {
 	 * {@code x-www-form-urlencoded} format.
 	 * @throws IllegalArgumentException If the definition cannot be parsed.
 	 */
-	public OPDescriptor(final String definition) {
+	OPDescriptor(final String definition) {
 
 		final String[] parts = definition.trim().split("\\s*,\\s*");
 		if ((parts.length < 3) || (parts.length > 4))
@@ -79,7 +79,7 @@ class OPDescriptor {
 	 *
 	 * @return The issuer identifier.
 	 */
-	public String getIssuer() {
+	String getIssuer() {
 
 		return this.issuer;
 	}
@@ -89,7 +89,7 @@ class OPDescriptor {
 	 *
 	 * @return The configuration document URL.
 	 */
-	public URL getConfigurationDocumentUrl() {
+	URL getConfigurationDocumentUrl() {
 
 		return this.configurationDocumentUrl;
 	}
@@ -99,7 +99,7 @@ class OPDescriptor {
 	 *
 	 * @return The client ID.
 	 */
-	public String getClientId() {
+	String getClientId() {
 
 		return this.clientId;
 	}
@@ -109,7 +109,7 @@ class OPDescriptor {
 	 *
 	 * @return The client secret.
 	 */
-	public String getClientSecret() {
+	String getClientSecret() {
 
 		return this.clientSecret;
 	}
@@ -121,7 +121,7 @@ class OPDescriptor {
 	 * @return The parameters in {@code x-www-form-urlencoded} format, or
 	 * {@code null} if none.
 	 */
-	public String getAdditionalAuthorizationParams() {
+	String getAdditionalAuthorizationParams() {
 
 		return this.additionalAuthorizationParams;
 	}

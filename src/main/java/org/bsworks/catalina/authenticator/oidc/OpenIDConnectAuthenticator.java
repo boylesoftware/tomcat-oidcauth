@@ -1,54 +1,45 @@
 package org.bsworks.catalina.authenticator.oidc;
 
-import java.beans.PropertyChangeListener;
-import java.io.ByteArrayOutputStream;
 import java.io.IOException;
-import java.io.InputStream;
+import java.io.InputStreamReader;
 import java.io.OutputStream;
+import java.io.Reader;
 import java.io.StringReader;
 import java.net.HttpURLConnection;
-import java.net.MalformedURLException;
 import java.net.URL;
 import java.net.URLConnection;
 import java.net.URLEncoder;
 import java.nio.charset.Charset;
+import java.security.InvalidKeyException;
+import java.security.NoSuchAlgorithmException;
 import java.security.Principal;
-import java.security.cert.X509Certificate;
+import java.security.SecureRandom;
+import java.security.Signature;
+import java.security.SignatureException;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Enumeration;
-import java.util.HashMap;
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 
-import org.apache.catalina.Container;
-import org.apache.catalina.Context;
-import org.apache.catalina.CredentialHandler;
 import org.apache.catalina.LifecycleException;
-import org.apache.catalina.Realm;
 import org.apache.catalina.Session;
-import org.apache.catalina.Wrapper;
 import org.apache.catalina.authenticator.Constants;
 import org.apache.catalina.authenticator.FormAuthenticator;
 import org.apache.catalina.authenticator.SavedRequest;
 import org.apache.catalina.connector.Request;
-import org.apache.catalina.connector.Response;
-import org.apache.catalina.realm.RealmBase;
 import org.apache.juli.logging.Log;
 import org.apache.juli.logging.LogFactory;
+import org.apache.tomcat.util.buf.HexUtils;
 import org.apache.tomcat.util.codec.binary.Base64;
 import org.apache.tomcat.util.descriptor.web.LoginConfig;
-import org.apache.tomcat.util.descriptor.web.SecurityConstraint;
+import org.bsworks.util.json.JSONArray;
 import org.bsworks.util.json.JSONException;
 import org.bsworks.util.json.JSONObject;
 import org.bsworks.util.json.JSONTokener;
-import org.ietf.jgss.GSSContext;
 
 
 /**
@@ -132,7 +123,7 @@ public class OpenIDConnectAuthenticator
 
 
 		/**
-		 * Create new descriptor.
+		 * Create new descriptor using request parameters.
 		 *
 		 * @param request The request representing the error response.
 		 */
@@ -141,6 +132,18 @@ public class OpenIDConnectAuthenticator
 			this.code = request.getParameter("error");
 			this.description = request.getParameter("error_description");
 			this.infoPageURI = request.getParameter("error_uri");
+		}
+
+		/**
+		 * Create new descriptor using endpoint error response JSON.
+		 *
+		 * @param error The error response JSON.
+		 */
+		AuthErrorDesc(final JSONObject error) {
+
+			this.code = error.getString("error");
+			this.description = error.getString("error_description", null);
+			this.infoPageURI = error.getString("error_uri", null);
 		}
 
 
@@ -208,6 +211,12 @@ public class OpenIDConnectAuthenticator
 		"org.bsworks.catalina.session.ISSUER";
 
 	/**
+	 * Name of the HTTP session note used to store the state value.
+	 */
+	private static final String SESS_STATE_NOTE =
+		"org.bsworks.catalina.session.STATE";
+
+	/**
 	 * Pattern for the state parameter.
 	 */
 	private static final Pattern STATE_PATTERN = Pattern.compile(
@@ -218,6 +227,7 @@ public class OpenIDConnectAuthenticator
 	 * The log.
 	 */
 	protected final Log log = LogFactory.getLog(this.getClass());
+
 
 	/**
 	 * Virtual host base URI.
@@ -255,6 +265,12 @@ public class OpenIDConnectAuthenticator
 	 * HTTP read timeout for OP endpoints.
 	 */
 	protected int httpReadTimeout = 5000;
+
+
+	/**
+	 * Secure random number generator.
+	 */
+	private final SecureRandom rand = new SecureRandom();
 
 	/**
 	 * Configured OpenID Connect Provider descriptors.
@@ -767,9 +783,15 @@ public class OpenIDConnectAuthenticator
 			final HttpServletResponse response, final LoginConfig config)
 		throws IOException {
 
+		// generate state value and save it in the session
+		final byte[] stateBytes = new byte[16];
+		this.rand.nextBytes(stateBytes);
+		final String state = HexUtils.toHexString(stateBytes);
+		request.getSessionInternal(true).setNote(SESS_STATE_NOTE, state);
+
 		// add OP authorization endpoints to the request for the login page
 		final List<AuthEndpointDesc> authEndpoints = new ArrayList<>();
-		final StringBuffer buf = new StringBuffer(128);
+		final StringBuilder buf = new StringBuilder(128);
 		for (int i = 0; i < this.opDescs.size(); i++) {
 			final OPDescriptor opDesc = this.opDescs.get(i);
 
@@ -791,10 +813,7 @@ public class OpenIDConnectAuthenticator
 			buf.append("&redirect_uri=").append(URLEncoder.encode(
 					this.getBaseURL(request) + Constants.FORM_ACTION,
 					UTF8.name()));
-			buf.append("&state=").append(i).append('Z').append(
-					URLEncoder.encode(
-							request.getSessionInternal().getIdInternal(),
-							UTF8.name()));
+			buf.append("&state=").append(i).append('Z').append(state);
 			final String addlParams = opDesc.getAdditionalAuthorizationParams();
 			if (addlParams != null)
 				buf.append('&').append(addlParams);
@@ -823,24 +842,39 @@ public class OpenIDConnectAuthenticator
 	protected Principal processAuthFormSubmission(final Session session,
 			final String username, final String password) {
 
-		if (this.log.isDebugEnabled())
+		final boolean debug = this.log.isDebugEnabled();
+		if (debug)
 			this.log.debug("authenticating username \"" + username
 					+ "\" using password");
 
 		// authenticate principal in the realm
 		final Principal principal =
 			this.context.getRealm().authenticate(username, password);
+		if (principal == null) {
+			if (debug)
+				this.log.debug("failed to authenticate the user in the realm");
+			return null;
+		}
 
 		// save authentication info in the session
-		if (principal != null) {
-			session.setNote(Constants.SESS_USERNAME_NOTE, username);
-			session.setNote(Constants.SESS_PASSWORD_NOTE, password);
-		}
+		session.setNote(Constants.SESS_USERNAME_NOTE, username);
+		session.setNote(Constants.SESS_PASSWORD_NOTE, password);
 
 		// return the principal
 		return principal;
 	}
 
+	/**
+	 * Process the authentication response and authenticate the user.
+	 *
+	 * @param session The session.
+	 * @param request The request representing the authentication response.
+	 *
+	 * @return The authenticated principal, or {@code null} if could not
+	 * authenticate.
+	 *
+	 * @throws IOException If an I/O error happens communicating with the OP.
+	 */
 	protected Principal processAuthResponse(final Session session,
 			final Request request)
 		throws IOException {
@@ -851,13 +885,13 @@ public class OpenIDConnectAuthenticator
 					+ " authentication response");
 
 		// parse the state
-		final String state = request.getParameter("state");
-		if (state == null) {
+		final String stateParam = request.getParameter("state");
+		if (stateParam == null) {
 			if (debug)
 				this.log.debug("no state in the authentication response");
 			return null;
 		}
-		final Matcher m = STATE_PATTERN.matcher(state);
+		final Matcher m = STATE_PATTERN.matcher(stateParam);
 		if (!m.find()) {
 			if (debug)
 				this.log.debug("invalid state value in the authentication"
@@ -865,7 +899,7 @@ public class OpenIDConnectAuthenticator
 			return null;
 		}
 		final int opInd = Integer.parseInt(m.group(1));
-		final String stateSessionId = m.group(2);
+		final String state = m.group(2);
 
 		// get OP descriptor from the state
 		if (opInd >= this.opDescs.size()) {
@@ -880,7 +914,9 @@ public class OpenIDConnectAuthenticator
 			this.log.debug("processing authentication response from " + issuer);
 
 		// match the session id from the state
-		if (!stateSessionId.equals(session.getIdInternal())) {
+		final String sessionState = (String) session.getNote(SESS_STATE_NOTE);
+		session.removeNote(SESS_STATE_NOTE);
+		if (!state.equals(sessionState)) {
 			if (debug)
 				this.log.debug("authentication response state does not match"
 						+ " the session id");
@@ -890,26 +926,229 @@ public class OpenIDConnectAuthenticator
 		// check if error response
 		final String errorCode = request.getParameter("error");
 		if (errorCode != null) {
+			final AuthErrorDesc authError = new AuthErrorDesc(request);
 			if (debug)
-				this.log.debug("authentication error response: " + errorCode);
-			request.setAttribute(AUTHERROR_ATT, new AuthErrorDesc(request));
+				this.log.debug("authentication error response: "
+						+ authError.getCode());
+			request.setAttribute(AUTHERROR_ATT, authError);
 			return null;
 		}
 
-		// get the OP configuration
-		final OPConfiguration opConfig = this.ops.getOPConfiguration(issuer);
+		// get the authorization code
+		final String authCode = request.getParameter("code");
+		if (authCode == null) {
+			if (debug)
+				this.log.debug("no authorization code in the authentication"
+						+ " response");
+			return null;
+		}
 
-		// TODO:...
-		final Principal principal = null;
+		// call the token endpoint, check if error and get the ID token
+		final JSONObject tokenResponse =
+			this.callTokenEndpoint(opDesc, authCode, request);
+		if (tokenResponse.has("error")) {
+			final AuthErrorDesc authError = new AuthErrorDesc(tokenResponse);
+			if (debug)
+				this.log.debug("token error response: " + authError.getCode());
+			return null;
+		}
+
+		// decode the ID token
+		final String[] idTokenParts =
+			tokenResponse.getString("id_token").split("\\.");
+		final JSONObject idTokenHeader = new JSONObject(new JSONTokener(
+				new StringReader(new String(Base64.decodeBase64(
+						idTokenParts[0]), UTF8))));
+		final JSONObject idTokenPayload = new JSONObject(new JSONTokener(
+				new StringReader(new String(Base64.decodeBase64(
+						idTokenParts[1]), UTF8))));
+		final byte[] idTokenSignature = Base64.decodeBase64(idTokenParts[2]);
+		if (debug)
+			this.log.debug("decoded ID token:"
+					+ "\n    header:    " + idTokenHeader
+					+ "\n    payload:   " + idTokenPayload
+					+ "\n    signature: " + Arrays.toString(idTokenSignature));
+
+		// validate the ID token:
+
+		// validate issuer match
+		if (!issuer.equals(idTokenPayload.getString("iss", null))) {
+			if (debug)
+				this.log.debug("the ID token issuer does not match");
+			return null;
+		}
+
+		// validate audience match
+		final Object audValue = idTokenPayload.get("aud", "");
+		boolean audMatch = false;
+		if (audValue instanceof JSONArray) {
+			final JSONArray auds = (JSONArray) audValue;
+			for (int n = auds.length() - 1; n >= 0; n--) {
+				if (opDesc.getClientId().equals(auds.get(n))) {
+					audMatch = true;
+					break;
+				}
+			}
+		} else {
+			audMatch = opDesc.getClientId().equals(audValue);
+		}
+		if (!audMatch) {
+			if (debug)
+				this.log.debug("the ID token audience does not match");
+			return null;
+		}
+
+		// validate authorized party
+		if ((audValue instanceof JSONArray) && idTokenPayload.has("azp")) {
+			if (!opDesc.getClientId().equals(idTokenPayload.get("azp"))) {
+				if (debug)
+					this.log.debug("the ID token authorized party does not"
+							+ " match");
+				return null;
+			}
+		}
+
+		// validate token expiration
+		if (!idTokenPayload.has("exp")
+				|| (idTokenPayload.getLong("exp") * 1000L)
+						<= System.currentTimeMillis()) {
+			if (debug)
+				this.log.debug("the ID token expired or no expiration time");
+			return null;
+		}
+
+		// validate signature
+		final String sigAlg = idTokenHeader.optString("alg");
+		switch (sigAlg) {
+		case "RS256":
+			try {
+				final Signature sig = Signature.getInstance("SHA256withRSA");
+				sig.initVerify(this.ops.getOPConfiguration(issuer)
+						.getJWKSet().getKey(idTokenHeader.getString("kid")));
+				sig.update((idTokenParts[0] + '.' + idTokenParts[1])
+						.getBytes("ASCII"));
+				if (!sig.verify(idTokenSignature)) {
+					if (debug)
+						this.log.debug("invalid signature");
+					return null;
+				}
+			} catch (final NoSuchAlgorithmException | SignatureException
+						| InvalidKeyException e) {
+				throw new RuntimeException(
+						"Platform lacks signature algorithm support.", e);
+			}
+			if (debug)
+				this.log.debug("signature validated successfully");
+			break;
+		case "HS256":
+			// TODO: implement support
+		default:
+			this.log.warn("unsupported token signature algorythm \"" + sigAlg
+					+ "\", skipping signature verification");
+		}
+
+		// the token is valid, proceed:
+
+		// get username from the ID token
+		final String username =
+			idTokenPayload.getString(this.usernameClaim, null);
+		if (username == null) {
+			if (debug)
+				this.log.debug("the ID token does not contain the \""
+						+ this.usernameClaim
+						+ "\" claim used as the username claim");
+			return null;
+		}
+
+		// authenticate the user in the realm
+		if (debug)
+			this.log.debug("authenticating user \"" + username + "\"");
+		final Principal principal =
+			this.context.getRealm().authenticate(username);
+		if (principal == null) {
+			if (debug)
+				this.log.debug("failed to authenticate the user in the realm");
+			return null;
+		}
 
 		// save authentication info in the session
-		if (principal != null) {
-			session.setNote(Constants.SESS_USERNAME_NOTE, principal.getName());
-			session.setNote(SESS_OIDC_ISSUER_NOTE, issuer);
-		}
+		session.setNote(Constants.SESS_USERNAME_NOTE, principal.getName());
+		session.setNote(SESS_OIDC_ISSUER_NOTE, issuer);
 
 		// return the principal
 		return principal;
+	}
+
+	/**
+	 * Call the OP's token endpoint and exchange the authorization code.
+	 *
+	 * @param opDesc OP descriptor.
+	 * @param authCode The authorization code received from the authentication
+	 * endpoint.
+	 * @param request The request.
+	 *
+	 * @return The token endpoint response JSON.
+	 *
+	 * @throws IOException If an I/O error happens communicating with the
+	 * endpoint.
+	 */
+	protected JSONObject callTokenEndpoint(final OPDescriptor opDesc,
+			final String authCode, final Request request)
+		throws IOException {
+
+		// get the OP configuration
+		final OPConfiguration opConfig =
+			this.ops.getOPConfiguration(opDesc.getIssuer());
+		final URL tokenEndpointURL = new URL(opConfig.getTokenEndpoint());
+
+		// build POST body
+		final StringBuilder buf = new StringBuilder(256);
+		buf.append("grant_type=authorization_code");
+		buf.append("&code=").append(URLEncoder.encode(authCode, UTF8.name()));
+		buf.append("&redirect_uri=").append(URLEncoder.encode(
+				this.getBaseURL(request) + Constants.FORM_ACTION, UTF8.name()));
+		buf.append("&client_id=").append(URLEncoder.encode(
+				opDesc.getClientId(), UTF8.name()));
+		final String postBody = buf.toString();
+
+		// log the call
+		final boolean debug = this.log.isDebugEnabled();
+		if (debug)
+			this.log.debug("calling token endpoint at " + tokenEndpointURL
+					+ " with: " + postBody);
+
+		// configure connection
+		final HttpURLConnection con =
+			(HttpURLConnection) tokenEndpointURL.openConnection();
+		con.setConnectTimeout(this.httpConnectTimeout);
+		con.setReadTimeout(this.httpReadTimeout);
+		con.setInstanceFollowRedirects(false);
+		con.addRequestProperty("Authorization",
+				"Basic " + Base64.encodeBase64String(
+						(opDesc.getClientId() + ":" + opDesc.getClientSecret())
+							.getBytes(UTF8)));
+		con.addRequestProperty("Content-Type",
+				"application/x-www-form-urlencoded");
+		con.addRequestProperty("Accept", "application/json");
+		con.setDoOutput(true);
+
+		// send POST and read response
+		final JSONObject response;
+		try (final OutputStream out = con.getOutputStream()) {
+			out.write(postBody.getBytes(UTF8.name()));
+			out.flush();
+			try (final Reader in = new InputStreamReader(
+					con.getInputStream(), UTF8)) {
+				response = new JSONObject(new JSONTokener(in));
+			}
+		}
+
+		// log the response
+		if (debug)
+			this.log.debug("received response: " + response.toString());
+
+		// return the response
+		return response;
 	}
 
 	/**
@@ -950,445 +1189,6 @@ public class OpenIDConnectAuthenticator
 		return true;
 	}
 
-	/*public boolean doAuthenticate1(final Request request,
-			final HttpServletResponse response)
-		throws IOException {
-
-		final boolean debug = this.log.isDebugEnabled();
-
-		// check if already authenticated
-		if (this.checkAuthenticated(request))
-			return true;
-
-		// get the session
-		final Session session = request.getSessionInternal(true);
-
-		// re-submit of the original request after successful authentication?
-		final boolean resubmit = this.matchRequest(request);
-
-		// have we authenticated this user before but have caching disabled?
-		if (!this.cache) {
-			if (debug)
-				this.log.debug("caching is disabled, checking for"
-						+ " reauthenticate in session "
-						+ session.getIdInternal());
-
-			// get username from the session
-			final String username =
-				(String) session.getNote(Constants.SESS_USERNAME_NOTE);
-			if (username != null) {
-				if (debug)
-					this.log.debug("reauthenticating username \""
-							+ username + "\"");
-
-				// get principal from the realm
-				final Principal principal = this.context.getRealm()
-						.authenticate(username, username);
-				if (principal != null) {
-
-					// save principal in the session
-					session.setNote(Constants.FORM_PRINCIPAL_NOTE, principal);
-
-					// authenticate the request and exit with success
-					if (!resubmit) {
-						this.register(request, response, principal,
-								this.getAuthMethod(), username, null);
-						return true;
-					}
-
-					// resubmit requires original request restored, don't exit
-					if (debug)
-						this.log.debug("resubmit, continuing");
-
-				} else { // realm rejected user from the session
-					if (debug)
-						this.log.debug("reauthentication failed, proceed"
-								+ " normally");
-				}
-			}
-		}
-
-		// re-submit of the original request after successful authentication?
-		if (resubmit) {
-			if (debug)
-				this.log.debug("resubmit, restoring request from session "
-						+ session.getIdInternal());
-
-			// authenticate the request with the principal from the session
-			this.register(request, response,
-					(Principal) session.getNote(Constants.FORM_PRINCIPAL_NOTE),
-					this.getAuthMethod(),
-					(String) session.getNote(Constants.SESS_USERNAME_NOTE),
-					null);
-
-			// if we're caching principals we no longer need the username
-			if (this.cache)
-				session.removeNote(Constants.SESS_USERNAME_NOTE);
-
-			// try to restore the original request
-			if (!this.restoreRequest(request, session)) { // should no happen
-				if (debug)
-					this.log.debug("restore of original request failed");
-				response.sendError(
-						HttpServletResponse.SC_INTERNAL_SERVER_ERROR);
-				return false;
-			}
-
-			// done, proceed to processing of the restored original request
-			if (debug)
-				this.log.debug("proceed to restored request");
-			return true;
-		}
-
-		// check if callback from the authorization server
-		final String requestURI = request.getDecodedRequestURI();
-		final boolean isCallback =
-			(requestURI.startsWith(request.getContextPath())
-					&& requestURI.endsWith(Constants.FORM_ACTION));
-
-		// check if initial request to a protected resource
-		if (!isCallback) {
-			if (debug)
-				this.log.debug("initial request to protected resource");
-
-			// save request
-			if (debug)
-				this.log.debug("saving request in session "
-						+ session.getIdInternal());
-			try {
-				this.saveRequest(request, session);
-			} catch (final IOException e) {
-				this.log.debug("request body is probably too big to save"
-						+ " during authentication", e);
-				response.sendError(HttpServletResponse.SC_FORBIDDEN,
-						sm.getString("authenticator.requestBodyTooBig"));
-				return false;
-			}
-
-			// redirect to the authorization server
-			this.redirectToAuthorizationServer(request, response);
-
-			// done, leave unauthenticated
-			return false;
-		}
-
-		// callback from the authorization server, log the call
-		if (debug) {
-			final StringBuilder msg = new StringBuilder(256);
-			msg.append("callback from the authorization server:");
-			for (final Enumeration<String> en = request.getParameterNames();
-					en.hasMoreElements();) {
-				final String paramName = en.nextElement();
-				msg.append("\n    ").append(paramName).append(": ")
-					.append(request.getParameter(paramName));
-			}
-			this.log.debug(msg.toString());
-		}
-
-		// acknowledge the request
-		request.getResponse().sendAcknowledgement();
-
-		// process the callback and return the result
-		return this.processAuthorizationServerCallback(request, response);
-	}*/
-
-	/**
-	 * Check if the request is already authenticated. If not, also check if can
-	 * be re-authenticated against an existing SSO session, if any.
-	 *
-	 * @param request The request.
-	 *
-	 * @return {@code true} if authenticated.
-	 */
-	/*protected boolean checkAuthenticated(final Request request) {
-
-		final boolean debug = this.log.isDebugEnabled();
-
-		// is the request already authenticated
-		final Principal principal = request.getUserPrincipal();
-		if (principal != null) {
-			if (debug)
-				this.log.debug("already authenticated as \""
-						+ principal.getName() + "\"");
-
-			// associate the session with any existing SSO session
-			final String ssoId =
-				(String) request.getNote(Constants.REQ_SSOID_NOTE);
-			if (ssoId != null)
-				this.associate(ssoId, request.getSessionInternal(true));
-
-			// report as authenticated
-			return true;
-		}
-
-		// is there an SSO session against which we can try to re-authenticate?
-		final String ssoId = (String) request.getNote(Constants.REQ_SSOID_NOTE);
-		if (ssoId != null) {
-			if (debug)
-				this.log.debug("SSO id " + ssoId
-						+ ", attempting reauthentication");
-			if (this.reauthenticateFromSSO(ssoId, request))
-				return true;
-		}
-
-		// no, not authenticated
-		return false;
-	}*/
-
-	/**
-	 * Respond with a redirect to the OpenID Connect provider authorization
-	 * endpoint.
-	 *
-	 * @param request The request.
-	 * @param response The response.
-	 *
-	 * @throws IOException If an I/O error happens sending the response.
-	 */
-	/*protected void redirectToAuthorizationServer(final Request request,
-			final HttpServletResponse response)
-		throws IOException {
-
-		final StringBuilder urlBuf = new StringBuilder(256);
-		urlBuf.append(this.opConfig.getAuthorizationEndpoint())
-			.append("?scope=")
-				.append(URLEncoder.encode("openid email", UTF8.name()))
-			.append("&response_type=code")
-			.append("&client_id=")
-				.append(URLEncoder.encode(this.clientId, UTF8.name()))
-			.append("&redirect_uri=")
-				.append(URLEncoder.encode(
-						this.getBaseURL(request) + Constants.FORM_ACTION,
-						UTF8.name()))
-			.append("&state=")
-				.append(URLEncoder.encode(
-						request.getSessionInternal().getIdInternal(),
-						UTF8.name()));
-		if (this.hostedDomain != null)
-			urlBuf.append("&hd=").append(
-					URLEncoder.encode(this.hostedDomain, UTF8.name()));
-		final String url = urlBuf.toString();
-
-		if (this.log.isDebugEnabled())
-			this.log.debug("redirecting to " + url);
-
-		response.sendRedirect(url);
-	}*/
-
-	/**
-	 * Process callback from the authorization server.
-	 *
-	 * @param request The request.
-	 * @param response The response.
-	 *
-	 * @return {@code true} to proceed authenticated, {@code false} if
-	 * authentication failed and the method sent the appropriate response.
-	 *
-	 * @throws IOException If an I/O error happens sending the client response.
-	 */
-	/*protected boolean processAuthorizationServerCallback(final Request request,
-			final HttpServletResponse response)
-		throws IOException {
-
-		final boolean debug = this.log.isDebugEnabled();
-
-		// check that the state matches the session
-		final Session session = request.getSessionInternal();
-		if (!session.getIdInternal().equals(
-				request.getParameter("state"))) {
-			if (debug)
-				this.log.debug("received state does not match the session id");
-			response.sendError(HttpServletResponse.SC_BAD_REQUEST);
-			return false;
-		}
-
-		// check if error
-		final String errorCode = request.getParameter("error");
-		if (errorCode != null) {
-			if (debug)
-				this.log.debug("received error response " + errorCode);
-			this.forwardToErrorPage(request, response,
-					this.context.getLoginConfig());
-			return false;
-		}
-
-		// get the authorization code
-		final String code = request.getParameter("code");
-		if (code == null) {
-			if (debug)
-				this.log.debug("request does not contain authorization code");
-			response.sendError(HttpServletResponse.SC_BAD_REQUEST);
-			return false;
-		}
-
-		// exchange the code
-		final Map<String, String> params = new HashMap<>();
-		params.put("grant_type", "authorization_code");
-		params.put("code", code);
-		params.put("redirect_uri",
-				this.getBaseURL(request) + Constants.FORM_ACTION);
-		params.put("client_id", this.clientId);
-		if (this.clientSecret != null)
-			params.put("client_secret", this.clientSecret);
-		final JSONObject respJson;
-		try {
-			final String respEntity = this.httpPost(
-					new URL(this.opConfig.getTokenEndpoint()),
-					params, "application/json");
-			if (respEntity == null) {
-				if (debug)
-					this.log.debug("exchange code call failed");
-				this.forwardToErrorPage(request, response,
-						this.context.getLoginConfig());
-				return false;
-			}
-			respJson = new JSONObject(new JSONTokener(new StringReader(
-					respEntity)));
-		} catch (final JSONException | IOException e) {
-			this.log.error("could not get valid response from authorization"
-					+ " server's token endpoint", e);
-			response.sendError(HttpServletResponse.SC_INTERNAL_SERVER_ERROR);
-			return false;
-		}
-
-		// check if error
-		if (respJson.has("error")) {
-			if (debug)
-				this.log.debug("received error response "
-						+ respJson.getString("error"));
-			response.sendError(HttpServletResponse.SC_FORBIDDEN);
-			return false;
-		}
-
-		// parse the ID token
-		if (!respJson.has("id_token")) {
-			if (debug)
-				this.log.debug("no id_token in the response");
-			response.sendError(HttpServletResponse.SC_INTERNAL_SERVER_ERROR);
-			return false;
-		}
-		final JSONObject idTokenHeader;
-		final JSONObject idTokenPayload;
-		final byte[] idTokenSignature;
-		try {
-			final String[] idTokenParts =
-				respJson.getString("id_token").split("\\.");
-			idTokenHeader = new JSONObject(new JSONTokener(new StringReader(
-					new String(Base64.decodeBase64(idTokenParts[0]), UTF8))));
-			idTokenPayload = new JSONObject(new JSONTokener(new StringReader(
-					new String(Base64.decodeBase64(idTokenParts[1]), UTF8))));
-			idTokenSignature = Base64.decodeBase64(idTokenParts[2]);
-		} catch (final JSONException | ArrayIndexOutOfBoundsException e) {
-			this.log.error("could not parse ID Token", e);
-			response.sendError(HttpServletResponse.SC_INTERNAL_SERVER_ERROR);
-			return false;
-		}
-		if (debug) {
-			this.log.debug("parsed ID Token:"
-					+ "\n    header:    " + idTokenHeader
-					+ "\n    payload:   " + idTokenPayload
-					+ "\n    signature: " + Arrays.toString(idTokenSignature));
-		}
-
-		// validate the ID token
-		if (!this.opConfig.getIssuer().equals(
-				idTokenPayload.getString("iss", null))) {
-			if (debug)
-				this.log.debug("the ID Token issuer does not match");
-			response.sendError(HttpServletResponse.SC_FORBIDDEN);
-			return false;
-		}
-		// TODO: "aud" may be an array
-		if (!this.clientId.equals(idTokenPayload.getString("aud", null))) {
-			if (debug)
-				this.log.debug("the ID Token audience does not match");
-			response.sendError(HttpServletResponse.SC_FORBIDDEN);
-			return false;
-		}
-		final String azp = idTokenPayload.getString("azp", null);
-		if ((azp != null) && !azp.equals(this.clientId)) {
-			if (debug)
-				this.log.debug("the ID Token authorized party does not match");
-			response.sendError(HttpServletResponse.SC_FORBIDDEN);
-			return false;
-		}
-		if (!idTokenPayload.has("exp")
-				|| (idTokenPayload.getLong("exp") * 1000L)
-						<= System.currentTimeMillis()) {
-			if (debug)
-				this.log.debug("the ID Token expired or no expiration time");
-			response.sendError(HttpServletResponse.SC_FORBIDDEN);
-			return false;
-		}
-
-		// get username from the ID token
-		final String username =
-			idTokenPayload.getString(this.usernameClaim, null);
-		if (username == null) {
-			if (debug)
-				this.log.debug("the ID Token does not contain the \""
-						+ this.usernameClaim
-						+ "\" claim used as the username claim.");
-			response.sendError(HttpServletResponse.SC_FORBIDDEN);
-			return false;
-		}
-
-		// authenticate the user in the realm
-		if (debug)
-			this.log.debug("authenticating user \"" + username + "\"");
-		final Principal principal =
-			this.context.getRealm().authenticate(username, username);
-		if (principal == null) {
-			if (debug)
-				this.log.debug("failed to authenticate the user in the realm");
-			this.forwardToErrorPage(request, response,
-					this.context.getLoginConfig());
-			return false;
-		}
-		if (debug)
-			this.log.debug("successful authentication of \"" + username + "\"");
-
-		// save the authenticated user in the session
-		session.setNote(Constants.FORM_PRINCIPAL_NOTE, principal);
-		session.setNote(Constants.SESS_USERNAME_NOTE, username);
-
-		// redirect the user to the original request URI (which will resubmit)
-		final String savedRequestURL = this.savedRequestURL(session);
-		if (debug)
-			this.log.debug("redirecting to original URL " + savedRequestURL);
-		if (savedRequestURL == null) {
-
-			// check that we have the landing page configured
-			if (this.landingPage == null) {
-				response.sendError(HttpServletResponse.SC_BAD_REQUEST,
-						sm.getString("authenticator.formlogin"));
-				return false;
-			}
-
-			// make it think the user originally requested the landing page
-			final String uri = request.getContextPath() + this.landingPage;
-			final SavedRequest savedRequest = new SavedRequest();
-			savedRequest.setMethod("GET");
-			savedRequest.setRequestURI(uri);
-			savedRequest.setDecodedRequestURI(uri);
-			session.setNote(Constants.FORM_REQUEST_NOTE, savedRequest);
-			response.sendRedirect(response.encodeRedirectURL(uri));
-
-		} else { // we have original request URL
-
-			final Response internalResponse = request.getResponse();
-			final String location = response.encodeRedirectURL(savedRequestURL);
-			if ("HTTP/1.1".equals(request.getProtocol()))
-				internalResponse.sendRedirect(location,
-						HttpServletResponse.SC_SEE_OTHER);
-			else
-				internalResponse.sendRedirect(location,
-						HttpServletResponse.SC_FOUND);
-		}
-
-		// redirect was sent in the response, don't proceed with the request
-		return false;
-	}*/
-
 	/**
 	 * Get web-application base URL (either from the {@code hostBaseURI}
 	 * authenticator property or auto-detected from the request).
@@ -1410,112 +1210,5 @@ public class OpenIDConnectAuthenticator
 		baseURLBuf.append(request.getContextPath());
 
 		return baseURLBuf.toString();
-	}
-
-	/**
-	 * Get content from a URL using HTTP GET.
-	 *
-	 * @param url The URL.
-	 * @param accept Accepted response content type, or {@code null} for
-	 * anything.
-	 *
-	 * @return The response entity.
-	 *
-	 * @throws IOException If an I/O error happens.
-	 */
-	protected String httpGet(final URL url, final String accept)
-		throws IOException {
-
-		final boolean debug = this.log.isDebugEnabled();
-
-		if (debug)
-			this.log.debug("getting data from " + url);
-
-		final HttpURLConnection con = (HttpURLConnection) url.openConnection();
-		con.setConnectTimeout(this.httpConnectTimeout);
-		con.setReadTimeout(this.httpReadTimeout);
-
-		if (accept != null)
-			con.addRequestProperty("Accept", accept);
-
-		final ByteArrayOutputStream respBuf = new ByteArrayOutputStream(4096);
-		try (final InputStream in = con.getInputStream()) {
-			final byte[] buf = new byte[512];
-			int n;
-			while ((n = in.read(buf)) >= 0)
-				respBuf.write(buf, 0, n);
-		}
-
-		final String resp = respBuf.toString(UTF8.name());
-		if (debug)
-			this.log.debug("received response: " + resp);
-
-		return resp;
-	}
-
-	/**
-	 * Get content from a URL using HTTP POST.
-	 *
-	 * @param url The URL.
-	 * @param data Data to send.
-	 * @param accept Accepted response content type, or {@code null} for
-	 * anything.
-	 *
-	 * @return The response entity, or {@code null} if error response.
-	 *
-	 * @throws IOException If an I/O error happens.
-	 */
-	protected String httpPost(final URL url, final Map<String, String> data,
-			final String accept)
-		throws IOException {
-
-		final boolean debug = this.log.isDebugEnabled();
-
-		final StringBuilder body = new StringBuilder(512);
-		for (final Map.Entry<String, String> entry : data.entrySet()) {
-			final String paramName = entry.getKey();
-			final String paramValue = entry.getValue();
-			if (body.length() > 0)
-				body.append('&');
-			body.append(URLEncoder.encode(paramName, UTF8.name()))
-				.append('=').append(URLEncoder.encode(paramValue, UTF8.name()));
-		}
-
-		if (debug)
-			this.log.debug("posting data to " + url + ": " + body);
-
-		final HttpURLConnection con = (HttpURLConnection) url.openConnection();
-		con.setConnectTimeout(this.httpConnectTimeout);
-		con.setReadTimeout(this.httpReadTimeout);
-		con.setInstanceFollowRedirects(false);
-		con.setDoOutput(true);
-
-		if (accept != null)
-			con.addRequestProperty("Accept", accept);
-
-		final ByteArrayOutputStream respBuf = new ByteArrayOutputStream(4096);
-		try (final OutputStream out = con.getOutputStream()) {
-			out.write(body.toString().getBytes(UTF8.name()));
-			out.flush();
-			final int respCode = con.getResponseCode();
-			if (respCode != HttpURLConnection.HTTP_OK) {
-				this.log.debug("error response " + respCode
-						+ ": " + con.getResponseMessage());
-				con.disconnect();
-				return null;
-			}
-			try (final InputStream in = con.getInputStream()) {
-				final byte[] buf = new byte[512];
-				int n;
-				while ((n = in.read(buf)) >= 0)
-					respBuf.write(buf, 0, n);
-			}
-		}
-
-		final String resp = respBuf.toString(UTF8.name());
-		if (debug)
-			this.log.debug("received response: " + resp);
-
-		return resp;
 	}
 }
