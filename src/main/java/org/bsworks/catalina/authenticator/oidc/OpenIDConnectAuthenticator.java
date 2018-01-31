@@ -5,6 +5,7 @@ import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.io.Reader;
 import java.io.StringReader;
+import java.io.UnsupportedEncodingException;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.net.URLConnection;
@@ -22,6 +23,8 @@ import java.util.List;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import javax.crypto.Mac;
+import javax.crypto.spec.SecretKeySpec;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 
@@ -1018,34 +1021,14 @@ public class OpenIDConnectAuthenticator
 		}
 
 		// validate signature
-		final String sigAlg = idTokenHeader.optString("alg");
-		switch (sigAlg) {
-		case "RS256":
-			try {
-				final Signature sig = Signature.getInstance("SHA256withRSA");
-				sig.initVerify(this.ops.getOPConfiguration(issuer)
-						.getJWKSet().getKey(idTokenHeader.getString("kid")));
-				sig.update((idTokenParts[0] + '.' + idTokenParts[1])
-						.getBytes("ASCII"));
-				if (!sig.verify(idTokenSignature)) {
-					if (debug)
-						this.log.debug("invalid signature");
-					return null;
-				}
-			} catch (final NoSuchAlgorithmException | SignatureException
-						| InvalidKeyException e) {
-				throw new RuntimeException(
-						"Platform lacks signature algorithm support.", e);
-			}
+		if (!this.isSignatureValid(opDesc, idTokenHeader,
+				idTokenParts[0] + '.' + idTokenParts[1], idTokenSignature)) {
 			if (debug)
-				this.log.debug("signature validated successfully");
-			break;
-		case "HS256":
-			// TODO: implement support
-		default:
-			this.log.warn("unsupported token signature algorythm \"" + sigAlg
-					+ "\", skipping signature verification");
+				this.log.debug("invalid signature");
+			return null;
 		}
+		if (debug)
+			this.log.debug("signature validated successfully");
 
 		// the token is valid, proceed:
 
@@ -1077,6 +1060,63 @@ public class OpenIDConnectAuthenticator
 
 		// return the principal
 		return principal;
+	}
+
+	/**
+	 * Check if the JWT signature is valid.
+	 *
+	 * @param opDesc OP descriptor.
+	 * @param header Decoded JWT header.
+	 * @param data The JWT data (encoded header and payload).
+	 * @param signature The signature from the JWT to test.
+	 *
+	 * @return {@code true} if valid.
+	 *
+	 * @throws IOException If an I/O error happens loading necessary data.
+	 */
+	protected boolean isSignatureValid(final OPDescriptor opDesc,
+			final JSONObject header, final String data,
+			final byte[] signature)
+		throws IOException {
+
+		try {
+
+			final String sigAlg = header.optString("alg");
+
+			switch (sigAlg) {
+
+			case "RS256":
+
+				final Signature sig = Signature.getInstance("SHA256withRSA");
+				sig.initVerify(this.ops.getOPConfiguration(opDesc.getIssuer())
+						.getJWKSet().getKey(header.getString("kid")));
+				sig.update(data.getBytes("ASCII"));
+
+				return sig.verify(signature);
+
+			case "HS256":
+
+				final Mac mac = Mac.getInstance("HmacSHA256");
+				mac.init(new SecretKeySpec(Base64.decodeBase64(
+						opDesc.getClientSecret()), "HmacSHA256"));
+				mac.update(data.getBytes("ASCII"));
+				final byte[] genSig = mac.doFinal();
+
+				return Arrays.equals(genSig, signature);
+
+			default:
+
+				this.log.warn("unsupported token signature algorythm \""
+						+ sigAlg + "\", skipping signature verification");
+
+				return true;
+			}
+
+		} catch (final NoSuchAlgorithmException | SignatureException
+				| InvalidKeyException | UnsupportedEncodingException e) {
+			throw new RuntimeException(
+					"Platform lacks signature algorithm support.", e);
+		}
 	}
 
 	/**
