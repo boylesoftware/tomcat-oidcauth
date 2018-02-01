@@ -17,8 +17,10 @@ import java.security.Principal;
 import java.security.SecureRandom;
 import java.security.Signature;
 import java.security.SignatureException;
+import java.text.DateFormat;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Date;
 import java.util.List;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -183,6 +185,180 @@ public class OpenIDConnectAuthenticator
 
 
 	/**
+	 * The successful authorization information derived from the token endpoint
+	 * response.
+	 */
+	public static final class Authorization {
+
+		/**
+		 * Issuer ID.
+		 */
+		private final String issuer;
+
+		/**
+		 * Timestamp when the authorization was issued.
+		 */
+		private final Date issuedAt;
+
+		/**
+		 * Access token.
+		 */
+		private final String accessToken;
+
+		/**
+		 * Token type.
+		 */
+		private final String tokenType;
+
+		/**
+		 * Seconds to the authorization (access token) expiration.
+		 */
+		private final int expiresIn;
+
+		/**
+		 * Optional refresh token.
+		 */
+		private final String refreshToken;
+
+		/**
+		 * Optional scope.
+		 */
+		private final String scope;
+
+		/**
+		 * ID token.
+		 */
+		private final String idToken;
+
+
+		/**
+		 * Create new authorization descriptor.
+		 *
+		 * @param issuer Issuer ID.
+		 * @param issuedAt Timestamp when the authorization was issued.
+		 * @param tokenResponse Successful token endpoint response document.
+		 */
+		Authorization(final String issuer, final Date issuedAt,
+				final JSONObject tokenResponse) {
+
+			this.issuer = issuer;
+			this.issuedAt = issuedAt;
+
+			this.accessToken = tokenResponse.getString("access_token");
+			this.tokenType = tokenResponse.getString("token_type");
+			this.expiresIn = tokenResponse.optInt("expires_in", -1);
+			this.refreshToken = tokenResponse.optString("refresh_token", null);
+			this.scope = tokenResponse.optString("scope", null);
+			this.idToken = tokenResponse.getString("id_token");
+		}
+
+
+		/**
+		 * Get Issuer Identifier.
+		 *
+		 * @return The issuer ID.
+		 */
+		public String getIssuer() {
+
+			return this.issuer;
+		}
+
+		/**
+		 * Get timestamp when the authorization was issued.
+		 *
+		 * @return The timestamp (milliseconds).
+		 */
+		public Date getIssuedAt() {
+
+			return this.issuedAt;
+		}
+
+		/**
+		 * Get access token.
+		 *
+		 * @return The access token.
+		 */
+		public String getAccessToken() {
+
+			return this.accessToken;
+		}
+
+		/**
+		 * Get access token type (e.g. "Bearer").
+		 *
+		 * @return Access token type.
+		 */
+		public String getTokenType() {
+
+			return this.tokenType;
+		}
+
+		/**
+		 * Get access token expiration.
+		 *
+		 * @return Seconds after which the authorization (the access token)
+		 * expires, or -1 if unspecified.
+		 */
+		public int getExpiresIn() {
+
+			return this.expiresIn;
+		}
+
+		/**
+		 * Get optional refresh token.
+		 *
+		 * @return The refresh token, or {@code null} if none.
+		 */
+		public String getRefreshToken() {
+
+			return this.refreshToken;
+		}
+
+		/**
+		 * Get optional scope.
+		 *
+		 * @return The scope, or {@code null} if none.
+		 */
+		public String getScope() {
+
+			return this.scope;
+		}
+
+		/**
+		 * Get ID token.
+		 *
+		 * @return The ID token.
+		 */
+		public String getIdToken() {
+
+			return this.idToken;
+		}
+
+
+		/* (non-Javadoc)
+		 * See overridden method.
+		 */
+		@Override
+		public String toString() {
+
+			final StringBuilder buf = new StringBuilder(1024);
+			buf.append("Authorization issued at ")
+				.append(DateFormat.getDateTimeInstance().format(this.issuedAt))
+				.append(" by ").append(this.issuer).append(":");
+			buf.append("\n  accessToken:  ").append(this.accessToken);
+			buf.append("\n  tokenType:    ").append(this.tokenType);
+			buf.append("\n  expiresIn:    ").append(this.expiresIn)
+				.append(" seconds");
+			buf.append("\n  refreshToken: ").append(this.refreshToken);
+			buf.append("\n  scope:        ").append(this.scope);
+			buf.append("\n  idToken:      ").append(this.idToken);
+
+			return buf.toString();
+		}
+	}
+
+
+	/**
 	 * Name of request attribute made available to the login page that maps
 	 * configured OP issuer IDs to the corresponding authorization endpoint
 	 * URLs.
@@ -196,10 +372,16 @@ public class OpenIDConnectAuthenticator
 	public static final String NOFORM_ATT = "org.bsworks.oidc.noForm";
 
 	/**
-	 * Name of the request attribute made available on the login error page that
+	 * Name of request attribute made available on the login error page that
 	 * contains the error descriptor.
 	 */
 	public static final String AUTHERROR_ATT = "org.bsworks.oidc.error";
+
+	/**
+	 * Name of session attribute used to store the {@link Authorization} object.
+	 */
+	public static final String AUTHORIZATION_ATT =
+		"org.bsworks.oidc.authorization";
 
 	/**
 	 * UTF-8 charset.
@@ -207,11 +389,11 @@ public class OpenIDConnectAuthenticator
 	private static final Charset UTF8 = Charset.forName("UTF-8");
 
 	/**
-	 * Name of the HTTP session note used to store the issuer ID of the OP used
-	 * to authenticate the currently authenticated principal.
+	 * Name of the HTTP session note used to store the {@link Authorization}
+	 * object.
 	 */
-	private static final String SESS_OIDC_ISSUER_NOTE =
-		"org.bsworks.catalina.session.ISSUER";
+	private static final String SESS_OIDC_AUTH_NOTE =
+		"org.bsworks.catalina.session.AUTHORIZATION";
 
 	/**
 	 * Name of the HTTP session note used to store the state value.
@@ -623,17 +805,18 @@ public class OpenIDConnectAuthenticator
 			return false;
 
 		// get the rest of the authentication info
-		final String issuer =
-			(String) session.getNote(SESS_OIDC_ISSUER_NOTE);
+		final Authorization authorization =
+			(Authorization) session.getNote(SESS_OIDC_AUTH_NOTE);
 		final String password =
 			(String) session.getNote(Constants.SESS_PASSWORD_NOTE);
 
 		// get the principal from the realm (try to reauthenticate)
 		Principal principal = null;
-		if (issuer != null) { // was authenticated using OpenID Connect
+		if (authorization != null) { // was authenticated using OpenID Connect
 			if (debug)
 				this.log.debug("reauthenticating username \""
-						+ username + "\" authenticated by " + issuer);
+						+ username + "\" authenticated by "
+						+ authorization.getIssuer());
 			principal = this.context.getRealm().authenticate(
 					username);
 		} else if (password != null) { // was form-based authentication
@@ -709,7 +892,7 @@ public class OpenIDConnectAuthenticator
 		if (this.cache) {
 			session.removeNote(Constants.SESS_USERNAME_NOTE);
 			session.removeNote(Constants.SESS_PASSWORD_NOTE);
-			session.removeNote(SESS_OIDC_ISSUER_NOTE);
+			session.removeNote(SESS_OIDC_AUTH_NOTE);
 		}
 
 		// try to restore original request
@@ -956,9 +1139,13 @@ public class OpenIDConnectAuthenticator
 			return null;
 		}
 
+		// create the authorization object
+		// TODO: the date better taken from token response "Date" header
+		final Authorization authorization =
+			new Authorization(issuer, new Date(), tokenResponse);
+
 		// decode the ID token
-		final String[] idTokenParts =
-			tokenResponse.getString("id_token").split("\\.");
+		final String[] idTokenParts = authorization.getIdToken().split("\\.");
 		final JSONObject idTokenHeader = new JSONObject(new JSONTokener(
 				new StringReader(new String(Base64.decodeBase64(
 						idTokenParts[0]), UTF8))));
@@ -1056,7 +1243,10 @@ public class OpenIDConnectAuthenticator
 
 		// save authentication info in the session
 		session.setNote(Constants.SESS_USERNAME_NOTE, principal.getName());
-		session.setNote(SESS_OIDC_ISSUER_NOTE, issuer);
+		session.setNote(SESS_OIDC_AUTH_NOTE, authorization);
+
+		// save authorization in the session for the application
+		session.getSession().setAttribute(AUTHORIZATION_ATT, authorization);
 
 		// return the principal
 		return principal;

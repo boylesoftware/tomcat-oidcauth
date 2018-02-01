@@ -51,7 +51,7 @@
 	<repositories>
 		<repository>
 			<id>boylesoftware-os</id>
-			<url>http://www.boylesoftware.com/maven/repo-os</url>
+			<url>http://boylesoftware.com/maven/repo-os</url>
 		</repository>
 	</repositories>
 

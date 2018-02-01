@@ -1,45 +1,95 @@
-OpenID Connect Authenticator for Tomcat
-=======================================
+# OpenID Connect Authenticator for Tomcat
 
-This is an extension of the standard [Apache Tomcat](https://tomcat.apache.org)
-authenticator used for form-based user authentication that uses OpenID Connect
-to authenticate web-application users.
+This is an authenticator implementation for [Apache Tomcat 8.5](http://tomcat.apache.org/) that allows web-applications to use [OpenID Connect](http://openid.net/connect/) to log users in.
 
-See details on OpenID Connect standard here:
+## Table of Contents
 
-http://openid.net/connect/
+* [Introduction](#introduction)
+* [Operation](#operation)
+* [Installation](#installation)
+* [Configuration](#configuration)
+* [The Web-Application](#the-web-application)
+  * [The Login Page](#the-login-page)
+  * [The Login Error Page](#the-login-error-page)
+  * [Authorization Info](#authorization-info)
 
-Also, Google supports OpenID Connect standard with the details described here:
+## Introduction
 
-https://developers.google.com/accounts/docs/OpenIDConnect
+Tomcat comes with a number of [built-in authenticators](http://tomcat.apache.org/tomcat-8.5-doc/config/valve.html#Authentication) for the standard authentication mechanisms defined in section 13.6 of the [Java Servlet 3.1 specification](http://download.oracle.com/otndocs/jcp/servlet-3_1-fr-spec/index.html), such as _HTTP Basic_, _HTTP Digest_, and _Form Based_. These standard authenticators are implemented as [Valves](http://tomcat.apache.org/tomcat-8.5-doc/config/valve.html) and are deployed in the web-application's context automatically depending on the application deployment descriptor's `login-config` element (section 14.4.18 of the Servlet specification). The _OpenID Connect Authenticator_ extends the standard form-based authenticator and adds ability to use an _OpenID Provider_ (OP) to log users in instead of the login form hosted by the web-application itself. The OPs that implement the standard and can be used with authenticator include [Auth0](https://auth0.com/), [Google Identity Platform](https://developers.google.com/identity/protocols/OpenIDConnect) (including G Suite), [Amazon Cognito](https://aws.amazon.com/cognito/), [Microsoft Azure AD](https://azure.microsoft.com/en-us/services/active-directory/), [Yahoo](https://developer.yahoo.com/oauth2/guide/openid_connect/) and others.
 
-Introduction
-------------
+The web-application is developed for form-based authentication so that the `auth-method` element in the deployment descriptor's `login-config` is `FORM` and the `form-login-config` element defines the login and error pages included with the web-application. The same web-application can be deployed with or without the _OpenID Connect Authenticator_. The login page, while remaining compatible with standard form-based authentication, is the only place in the whole application that is aware that it can be deployed with the _OpenID Connect Authenticator_ and contains logic that either redirects to the login page hosted by the OP, offers the user links or buttons to go to one of the configured OPs login pages or use a login form and standard form-based authentication, or some combination of the above. The authenticator valve and its configuration are specified in the web-application's context, so the same application binary can be deployed with different authenticators and authenticator configurations in different runtime environments.
 
-The goal of developing this authenticator was to allow web-applications that
-rely on the container to provide form-based user authentication to transparently
-use OpenID Connect authentication. That way, the same application can be
-deployed in an environment where OpenID Connect authentication is used,
-or in an environment that only uses regular form-based authentication without
-making any changes to the application itself.
+**This autnenticator is intended for traditional Java Servlet web-applications with server-side page rendering and use of HTTP sessions. It is not intended for RESTful applications. The same way as the standard authenticator implementations included with Tomcat, this authenticator utilizes server-side HTTP sessions defined in the Servlet specification to maintain the authenticated user information.**
 
-When the OpenID Connect authenticator is involved, when a client attempts to
-access a protected web-application URL, the authenticator redirects the client
-to the OpenID Connect authorization server (normally, with regular form-based
-authentication, the authenticator forwards to the login form page). The
-authorization server authenticates the user and redirects back to the
-web-application's `/j_security_check` URL. When regular form-based
-authentication is used, the login form submits the username and password to this
-URL. The OpenID Connect authorization server returns back to this URL with a
-special token, which gets validated in a server-to-server API call from the
-authenticator to the authorization server and is used to retrieve the
-authenticated principal information. This information is then used with the
-security realm configured for the web-application to lookup the user and the
-successfully authenticated request is forwarded further for processing by the
-web-application as if the login form were submitted.
+## Operation
 
-As mentioned above, the web-application is configured normally for form-based
-authentication. For example, in the application's `web.xml`:
+The authenticator implements OpenID Connect's [Authorization Code Flow](http://openid.net/specs/openid-connect-core-1_0.html#CodeFlowAuth). Once Tomcat sees an unauthenticated request to a protected web-application resource, it saves the request details in the HTTP session and forwards the request to the login page configured in the application deployment descriptor's `form-login-config` element. Normally, the login page is a JSP that displays a login form and submits the login information (the username and password) to the special application URI `/j_security_check` (see section 13.6.3.1 of the Java Servlet 3.1 specification). As an extension to the standard form-based process, the _OpenID Connect Authenticator_ provides the login page with special request attributes that include URLs of the login pages for every OP configured in the application context. The login page may contain logic that decides how to present the login options to the user. For example, if the application uses only one OP for the authentication and the local form-based login is disabled, the login page may immediately redirect the user's browser to the OP's login page. If more than one OP can be used by the application to log users in, it may display the login page that presents all the login options: links to the configured OPs as well as the local login form (or none). If the login page detects that it is not deployed with the _OpenID Connect Authenticator_ (the special request attributes with the OP cofigurations are missing), it can simply display the login form as any other application designed for the form-based authentication would.
+
+If the login page submits standard login form username and password (as `j_username` and `j_password` form fields) to the `/j_security_check` endpoint, the authenticator proceeds with the standard form-based authentication logic. As an alternative, the user ends up on the login page provided by and hosted at the OP. After the login process is complete at the OP, it redirects the user's browser back to the web-application, namely to its `/j_security_check` endpoint with the authorization code (as `code` URL query string parameter). The authenticator detects that the given `/j_security_check` call is indeed a redirect from the OP by the presence of the `code` parameter. If so, the authorization code is used to call the OP's [Token Endpoint](http://openid.net/specs/openid-connect-core-1_0.html#TokenEndpoint) and exchange it for the [ID Token](http://openid.net/specs/openid-connect-core-1_0.html#IDToken), which is a cryptographically signed object containing the authenticated user information. If the authentication at the OP was not successful, the authenticator displays the login error page configured in the deployment descriptor's `form-login-config` element. As an extension to the standard form-based authentication, the error page may receive special request attributes with the error description.
+
+Once the authenticator exchanges the authoization code for the ID Token, it extracts a field from the token (a _claim_) used as the username in the Tomcat's [Realm](http://tomcat.apache.org/tomcat-8.5-doc/realm-howto.html) and looks up the user. If the user is found in the realm, the user becomes the authenticated user and the HTTP session becomes authenticated. Note, that as opposed to RESTful applications, once the user is authenticated, the authenticator will not make any more calls to the OP for the duration of the HTTP session.
+
+## Installation
+
+The binary release of the authenticator can be downloaded from _Boyle Software, Inc._'s _Maven_ repository at:
+
+http://boylesoftware.com/maven/repo-os/org/bsworks/catalina/authenticator/oidc/tomcat8-oidcauth/
+
+The JAR then can be added to the Tomcat's classpath. For example, by placing it in `$CATALINA_BASE/lib` directory (see Tomcat's [Class Loader How-To](http://tomcat.apache.org/tomcat-8.5-doc/class-loader-howto.html) for more info).
+
+## Configuration
+
+The authenticator is added to Tomcat configuration as a [Valve](http://tomcat.apache.org/tomcat-8.5-doc/config/valve.html). Normally, it goes into the web-application's [Context](http://tomcat.apache.org/tomcat-8.5-doc/config/context.html). For example:
+
+```xml
+<Valve className="org.bsworks.catalina.authenticator.oidc.OpenIDConnectAuthenticator"
+       providers="..." />
+```
+
+The authenticator is configured using the following attributes on the valve:
+
+* `providers` _(required)_ - Whitespace-separated list of configuration elements for OpenID Providers (OPs) used by the application. Each configuration element configures a single OP and consists of a comma-separated list of parameters:
+
+  `<issuer ID>,<client ID>,<client secret>[,<addl auth endpoint params>]`
+
+  The `<issuer ID>` is the OP's unique _Issuer Identifier_ corresponding to the `iss` claim in the [ID Token](http://openid.net/specs/openid-connect-core-1_0.html#IDToken). The issuer identifier is a URL that is used for identifying the OP to the application, validating the ID Token `iss` claim and to load the OP configuration document according to the [OpenID Connect Discovery](http://openid.net/specs/openid-connect-discovery-1_0.html)'s [Obtaining OpenID Provider Configuration Information](http://openid.net/specs/openid-connect-discovery-1_0.html#ProviderConfig) process (by adding `.well-known/openid-configuration` to the issuer identifier to form the OP configuration document URL).
+
+  The `<client ID>` and `<client secret>` are the identifier and the secret associated with the web-application at the OP.
+
+  The optional `<addl auth endpoint params>` is a `application/x-www-form-urlencoded` list of parameters to add to the query string in the OP's [Authorization Endpoint](http://openid.net/specs/openid-connect-core-1_0.html#AuthorizationEndpoint) URL.
+
+* `usernameClaim` _(optional)_ - Claim in the [ID Token](http://openid.net/specs/openid-connect-core-1_0.html#IDToken) used as the username for the realm. The default is `sub`, which is the ID of the user in the OP database. Often, however, claims such as `email` are more convenient to use as the username.
+
+* `additionalScopes` _(optional)_ - Space-separated list of scopes to add to the `openid` scope for the OP's [Authorization Endpoint](http://openid.net/specs/openid-connect-core-1_0.html#AuthorizationEndpoint). For example, if `email` claim is used for the username, the `email` scope needs to be added (`email` claim is normally not included in the ID Token unless explicitely requested as part of the `email`, `profile` or similar scope at the Authorization Endpoint).
+
+* `hostBaseURI` _(optional)_ - Base URI for the web-application used to construct the `redirect_uri` parameter for the OP's Authorization Endpoint. The `redirect_uri` is constructed by appending `<context_path>/j_security_check` to the `hostBaseURI` value. Normally, there is no need to specify this configuration attribute as the authenticator can automatically construct it from the current request URI.
+
+* `noForm` _(optional)_ - If "true", the form-based authentication is disabled and only OpenID Connect authentication is allowed. The default is "false". The value of the flag is made available to the web-application's login page as well, so it can make decision to display the local login form or not.
+
+* `httpConnectTimeout` _(optional)_ - Timeout in milliseconds used for establishing server-to-server HTTP connections with the OP (see [java.net.URLConnection.setConnectTimeout()](https://docs.oracle.com/javase/8/docs/api/java/net/URLConnection.html#setConnectTimeout-int-)). The default is 5000 (5 seconds).
+
+* `httpReadTimeout` _(optional)_ - Timeout in milliseconds used for reading data in server-to-server HTTP connections with the OP (see [java.net.URLConnection.setReadTimeout()](https://docs.oracle.com/javase/8/docs/api/java/net/URLConnection.html#setReadTimeout-int-)). The default is 5000 (5 seconds).
+
+In addition to the attributes described above, all the attributes of the standard form-based authenticator are supported. For more information see [Form Authenticator Valve](http://tomcat.apache.org/tomcat-8.5-doc/config/valve.html#Form_Authenticator_Valve).
+
+Here is an example of the valve configuration with multiple OpenID Providers and use of the email address as the username:
+
+```xml
+<Valve className="org.bsworks.catalina.authenticator.oidc.OpenIDConnectAuthenticator"
+       providers="
+https://example.auth0.com/,7x9e5ozKO0JZc6JdriadVEvLpodz0182,jBmfqhKmBYe-zvcQCju8MT3nfP4g6mUvex1BdpH8-Tz5mx7x8brpmQfgw_Nyu4Px
+https://accounts.google.com,234571258471-9l1hgspl0qtuqohn80gat3j0vqo61cho.apps.googleusercontent.com,FRQFgCcSzyurnNJG-xVvMs8L,hd=example.com
+https://cognito-idp.us-east-1.amazonaws.com/us-east-1_AGKCjG3dQ,lz63q5p6qfn1ibjup0hn7jwka,1mz5n48ockpvqfirfkei7chgbo223ndgiblorrf4ksmcomr2itec
+https://sts.windows.net/45185e72-2ac1-4371-acec-d0b6d4469ce2/,817343e7-2f24-4951-acd1-8285665280c3,WLvE8nEz0zHOxrv1XrVLSzMd21URsx4i6owlv9059wk=
+       "
+	   usernameClaim="email" additionalScopes="email" />
+```
+
+_Note that contrary to the previous releases of this authenticator, special configuration of the realm where username and password must be always the same is no longer required. This allows using the same realm for both local form-based authentication and the OP-based authentication. When OP-based authentication is used, the user is looked up in the realm by the username without checking the password._
+
+## The Web-Application
+
+As mentioned earlier, the web-application is created as if for form-based authentication. For example, in the application's _web.xml_ it can have:
 
 ```xml
 <login-config>
@@ -52,155 +102,114 @@ authentication. For example, in the application's `web.xml`:
 </login-config>
 ```
 
-Note, that we still configure the login page and the error page. The login page
-is never used if OpenID Connect authenticator is involved (but, naturally, is
-still used when the web-application is deployed with the standard form-based
-authenticator). The login error page is used by the OpenID Connect authenticator
-when the authorization server redirects back to the web-application with the
-login error (for example, the user declined to share account information with
-the application on the authorization server's consent page).
+### The Login Page
 
-Installation
-------------
+Normally, an application that uses form-based authentication has something like the following in the `login.jsp`:
 
-The authenticator single JAR can be downloaded from the Boyle Software
-open-source projects Maven repository at:
+```html
+<h1>Login</h1>
 
-http://www.boylesoftware.com/maven/repo-os/org/bsworks/catalina/authenticator/oidc/tomcat8-oidcauth/
-
-The JAR then needs to be placed on the Tomcat's classpath. For example, it can
-be copied to `$CATALINA_BASE/lib`.
-
-Valve Configuration
--------------------
-
-The authenticator is installed in Tomcat as a
-[Valve](https://tomcat.apache.org/tomcat-8.0-doc/config/valve.html), normally on
-the [Context](https://tomcat.apache.org/tomcat-8.0-doc/config/context.html)
-level. For example:
-
-```xml
-<Valve className="org.bsworks.catalina.authenticator.oidc.OpenIDConnectAuthenticator"
-       discoveryDocumentURL="https://my.oidcprovider.com/.well-known/openid-configuration"
-       clientId="XXX"/>
+<form method="post" action="j_security_check">
+  <ul>
+    <li>
+	  <label for="usernameInput">Username</label>
+	  <div><input id="usernameInput" type="text" name="j_username"></div>
+	</li>
+    <li>
+	  <label for="passwordInput">Password</label>
+	  <div><input id="passwordInput" type="password" name="j_password"></div>
+	</li>
+	<li>
+	  <button type="submit">Submit</button>
+	</li>
+  </ul>
+</form>
 ```
 
-The following authenticator valve configuration properties are available:
+As an extension, the _OpenID Connect Authenticator_ provides the login page with a request attribute under name `org.bsworks.oidc.authEndpoints` with the list of authorization endpoints for each OP configured on the authenticator's valve. Each endpoint element includes two properties:
 
-<dl>
+* `issuer` - The OP's Issuer Identifier.
+* `url` - The URL, to which to direct the user's browser for the login.
 
-<dt>discoveryDocumentURL</dt>
-<dd><em>(required)</em> URL of the OpenID Connect provider's discovery document.
-The discovery document describes the provider's API endpoints used during the
-authentication sequence. Specifying this URL connects the authenticator to a
-particular OpenID Connect provider. For example, for <em>Google</em> (including
-<em>Google Apps</em>), the discovery document URL is
-https://accounts.google.com/.well-known/openid-configuration.</dd>
+Also, `org.bsworks.oidc.noForm` request attribute contains the `noForm` flag from the authenticator's valve configuration. So, a login page that allows login using multiple OPs as well as the local login form may look like the following:
 
-<dt>clientId</dt>
-<dd><em>(required)</em> OpenID Connect client id. This id identifies the
-web-application for the OpenID Connect provider.</dd>
+```jsp
+<h1>Login</h1>
 
-<dt>clientSecret</dt>
-<dd><em>(optional)</em> OpenID Connect client secret. Some OpenID Connect
-providers (including <em>Google</em>) require a special client secret to be
-submitted together with the client id. If not specified, no such secret is
-included in the calls to the OpenID Connect provider's endpoints.</dd>
+<%-- offer OpenID Connect providers if authenticator is configured --%>
+<c:set var="authEndpoints" value="${requestScope['org.bsworks.oidc.authEndpoints']}"/>
+<c:if test="${!empty authEndpoints}">
+<h2>Using OpenID Connect</h2>
+<ul>
+  <c:forEach items="${authEndpoints}" var="ep">
+  <li><a href="${ep.url}"><c:out value="${ep.issuer}"/></a></li>
+  </c:forEach>
+</ul>
+</c:if>
 
-<dt>hostBaseURI</dt>
-<dd><em>(optional)</em> Virtual host base URI. When the authenticator redirects
-the client to the OpenID Connect authorization server, it has to provide it with
-the return URL, which is the application's <code>j_security_check</code> URL.
-The <code>hostBaseURI</code> property is used to construct the return URL. It
-must include the protocol (should always be HTTPS), the host and, if needed,
-port, but not the context path. It also must not end with a slash. For example,
-"https://www.example.com". If this property is not specified, the authenticator
-will make an attempt to construct the URI based on the current request. In the
-majority of cases, the authenticator can construct the URI correctly, so this
-property is rarely used.</dd>
-
-<dt>hostedDomain</dt>
-<dd><em>(optional)</em> Some OpenID Connect providers (for example <em>Google
-Apps</em>) can limit the realm of the users to a given domain. This property can
-be used to specify such domain.</dd>
-
-<dt>usernameClaim</dt>
-<dd><em>(optional)</em> Claim in the
-<a href="http://openid.net/specs/openid-connect-core-1_0.html#IDToken">ID Token</a>
-used as the username for the web-application. The default is "sub" (the subject
-identifier), but often web-application use e-mail address as the username, in
-which case this argument needs to be specified as "email".</dd>
-
-<dt>httpConnectTimeout</dt>
-<dd><em>(optional)</em> Timeout in milliseconds used for establishing
-server-to-server HTTP connections with the OpenID Connect provider's endpoints.
-The default is 5000 (5 seconds).</dd>
-
-<dt>httpReadTimeout</dt>
-<dd><em>(optional)</em> Timeout in milliseconds used for reading data in
-server-to-server HTTP connections with the OpenID Connect provider's endpoints.
-The default is 5000 (5 seconds).</dd>
-
-</dl>
-
-In addition to the attributes above, all the attributes of the standard
-form-based authenticator are available as well. See more information here:
-
-https://tomcat.apache.org/tomcat-8.0-doc/config/valve.html#Form_Authenticator_Valve
-
-Here is an example of the valve configuration for an application that uses
-*Google Apps* accounts for authentication with e-mails used as usernames:
-
-```xml
-<Valve className="org.bsworks.catalina.authenticator.oidc.OpenIDConnectAuthenticator"
-       discoveryDocumentURL="https://accounts.google.com/.well-known/openid-configuration"
-       clientId="XXX"
-       clientSecret="XXX"
-       hostedDomain="example.com"
-       usernameClaim="email"/>
+<%-- offer local login form if not explicitely disabled --%>
+<c:if test="${!requestScope['org.bsworks.oidc.noForm']}">
+<h2>Using Form</h2>
+<form method="post" action="j_security_check">
+  <ul>
+    <li>
+	  <label for="usernameInput">Username</label>
+	  <div><input id="usernameInput" type="text" name="j_username"></div>
+	</li>
+    <li>
+	  <label for="passwordInput">Password</label>
+	  <div><input id="passwordInput" type="password" name="j_password"></div>
+	</li>
+	<li>
+	  <button type="submit">Submit</button>
+	</li>
+  </ul>
+</form>
+</c:if>
 ```
 
-The client id and secret can be retrieved from the application configuration in
-[Google Developers Console](https://console.developers.google.com/) (see OAuth
-2.0 Credentials section).
+Some applications don't want to show any application-hosted login page at all. That may be the case if the authenticator is configured with a single OP and local form-based login is not allowed. So, the `login.jsp` then simply renders a redirect to the first OP authorization endpoint URL:
 
-Realm Configuration
--------------------
-
-Normally, the
-[Realm](https://tomcat.apache.org/tomcat-8.0-doc/config/realm.html) in Tomcat is
-responsible for validating the username and password of the user attempting to
-authenticate. With OpenID Connect, the password (if password-based
-authentication is used) is verified by the authorization server, not the realm.
-However, the authenticator still needs to lookup the authenticated user in the
-realm to make sure that the user exists in the application and to get the user
-roles. For the purpose of the OpenID Connect authenticator, the realm needs to
-be configured in such a way, that the password is always the same as the
-username (we still need the password due to limitations in the Tomcat API). For
-example, if the application uses a database table for the user information and
-roles, the realm configuration in the application's context might look like the
-following:
-
-```xml
-<Realm className="org.apache.catalina.realm.DataSourceRealm"
-       dataSourceName="jdbc/ds"
-       userTable="users" userNameCol="user_name" userCredCol="user_name"
-       userRoleTable="user_roles" roleNameCol="role_name"/>
+```jsp
+<c:redirect url="${requestScope['org.bsworks.oidc.authEndpoints'][0].url}"/>
 ```
 
-Or, if an LDAP directory is used:
+Or something sophisticated, such as:
 
-```xml
-<Realm className="org.apache.catalina.realm.JNDIRealm"
-       connectionURL="ldap://localhost:389"
-       connectionName="cn=Manager,dc=mycompany,dc=com"
-       connectionPassword="secret"
-       userPattern="uid={0},ou=people,dc=mycompany,dc=com"
-       userPassword="uid"
-       roleBase="ou=groups,dc=mycompany,dc=com"
-       roleName="cn"
-       roleSearch="(uniqueMember={0})"/>
+```jsp
+<%-- redirect to the OP is the only option --%>
+<c:set var="authEndpoints" value="${requestScope['org.bsworks.oidc.authEndpoints']}"/>
+<c:if test="${requestScope['org.bsworks.oidc.noForm'] and fn:length(authEndpoints) eq 1}">
+  <c:redirect url="${authEndpoints[0].url}"/>
+</c:if>
+
+<%-- render the login page --%>
+<html lang="en">
+  ...
+</html>
 ```
 
-Note the `userCredCol` and `userPassword` attributes in the definitions of these
-realms that make sure that the password is always the same as the username.
+### The Login Error Page
+
+In addition to the standard form-based authenticator use cases, the login error page configured in the application deployment descriptor's `form-login-config` element is used by the _OpenID Connect Authenticator_ when either the OP's Authorization or Token endpoint comes back with an error. In that case, the authenticator provides the error page with a request attribute under `org.bsworks.oidc.error` name. The value is a bean with the following properties:
+
+* `code` - The error code. The standard codes are described in [Authentication Error Response](http://openid.net/specs/openid-connect-core-1_0.html#AuthError) and [Token Error Response](http://openid.net/specs/openid-connect-core-1_0.html#TokenErrorResponse) of the OpenID Connect specification.
+* `description` - Optional human-readable description of the error provided by the OP.
+* `infoPageURI` - Optional URL of the page that contains more information about the error.
+
+### Authorization Info
+
+Every HTTP session successfully authenticated by the _OpenID Connect Authenticator_ includes an authorization descriptor object in `org.bsworks.oidc.authorization` session attribute. The object exposed the following properties to the application:
+
+* `issuer` - The OP's Issuer Identifier.
+* `issuedAt` - A `java.util.Date` with the timestamp when the authorization was issued.
+* `accessToken` - The Access Token.
+* `tokenType` - The Access Token type (normally "Bearer").
+* `expiresIn` - An integer number of seconds after the authorization (access token) issue when it expires. In some cases this value is unavailable, in which case it's -1. That means the expiration period is defined by the OP somewhere else.
+* `refreshToken` - Optional refresh token, or `null` if none.
+* `scope` - Optional token scope. Usually `null`, which means the requested scope.
+* `idToken` - The ID Token.
+
+More information can be found in [section 5.1](https://tools.ietf.org/html/rfc6749#section-5.1) of the OAuth 2.0 Authorization Framework specification.
+
+_Note, that exposing some of the information contained in the authorization object in the application pages may pose a security risk._
