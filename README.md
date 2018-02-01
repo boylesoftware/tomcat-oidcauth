@@ -82,7 +82,7 @@ https://accounts.google.com,234571258471-9l1hgspl0qtuqohn80gat3j0vqo61cho.apps.g
 https://cognito-idp.us-east-1.amazonaws.com/us-east-1_AGKCjG3dQ,lz63q5p6qfn1ibjup0hn7jwka,1mz5n48ockpvqfirfkei7chgbo223ndgiblorrf4ksmcomr2itec
 https://sts.windows.net/45185e72-2ac1-4371-acec-d0b6d4469ce2/,817343e7-2f24-4951-acd1-8285665280c3,WLvE8nEz0zHOxrv1XrVLSzMd21URsx4i6owlv9059wk=
        "
-	   usernameClaim="email" additionalScopes="email" />
+       usernameClaim="email" additionalScopes="email" />
 ```
 
 _Note that contrary to the previous releases of this authenticator, special configuration of the realm where username and password must be always the same is no longer required. This allows using the same realm for both local form-based authentication and the OP-based authentication. When OP-based authentication is used, the user is looked up in the realm by the username without checking the password._
