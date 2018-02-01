@@ -112,16 +112,16 @@ Normally, an application that uses form-based authentication has something like 
 <form method="post" action="j_security_check">
   <ul>
     <li>
-	  <label for="usernameInput">Username</label>
-	  <div><input id="usernameInput" type="text" name="j_username"></div>
-	</li>
+      <label for="usernameInput">Username</label>
+      <div><input id="usernameInput" type="text" name="j_username"></div>
+    </li>
     <li>
-	  <label for="passwordInput">Password</label>
-	  <div><input id="passwordInput" type="password" name="j_password"></div>
-	</li>
-	<li>
-	  <button type="submit">Submit</button>
-	</li>
+      <label for="passwordInput">Password</label>
+      <div><input id="passwordInput" type="password" name="j_password"></div>
+    </li>
+    <li>
+      <button type="submit">Submit</button>
+    </li>
   </ul>
 </form>
 ```
@@ -153,16 +153,16 @@ Also, `org.bsworks.oidc.noForm` request attribute contains the `noForm` flag fro
 <form method="post" action="j_security_check">
   <ul>
     <li>
-	  <label for="usernameInput">Username</label>
-	  <div><input id="usernameInput" type="text" name="j_username"></div>
-	</li>
+      <label for="usernameInput">Username</label>
+      <div><input id="usernameInput" type="text" name="j_username"></div>
+    </li>
     <li>
-	  <label for="passwordInput">Password</label>
-	  <div><input id="passwordInput" type="password" name="j_password"></div>
-	</li>
-	<li>
-	  <button type="submit">Submit</button>
-	</li>
+      <label for="passwordInput">Password</label>
+      <div><input id="passwordInput" type="password" name="j_password"></div>
+    </li>
+    <li>
+      <button type="submit">Submit</button>
+    </li>
   </ul>
 </form>
 </c:if>
