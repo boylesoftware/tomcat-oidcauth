@@ -197,6 +197,8 @@ In addition to the standard form-based authenticator use cases, the login error 
 * `description` - Optional human-readable description of the error provided by the OP.
 * `infoPageURI` - Optional URL of the page that contains more information about the error.
 
+Also, both `org.bsworks.oidc.authEndpoints` and `org.bsworks.oidc.noForm` request attributes are made available the same way as for the login page. This allows having the login and the login error page to be implemented in a single JSP.
+
 ### Authorization Info
 
 Every HTTP session successfully authenticated by the _OpenID Connect Authenticator_ includes an authorization descriptor object in `org.bsworks.oidc.authorization` session attribute. The object exposed the following properties to the application:

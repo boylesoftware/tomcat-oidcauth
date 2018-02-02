@@ -969,6 +969,38 @@ public class OpenIDConnectAuthenticator
 			final HttpServletResponse response, final LoginConfig config)
 		throws IOException {
 
+		// add login configuration request attributes for the page
+		this.addLoginConfiguration(request);
+
+		// proceed to the login page
+		super.forwardToLoginPage(request, response, config);
+	}
+
+	/* (non-Javadoc)
+	 * See overridden method.
+	 */
+	@Override
+	protected void forwardToErrorPage(final Request request,
+			final HttpServletResponse response, final LoginConfig config)
+		throws IOException {
+
+		// add login configuration request attributes for the page
+		this.addLoginConfiguration(request);
+
+		// proceed to the login error page
+		super.forwardToErrorPage(request, response, config);
+	}
+
+	/**
+	 * Add request attributes for the login or the login error page.
+	 *
+	 * @param request The request.
+	 *
+	 * @throws IOException If an I/O error happens.
+	 */
+	protected void addLoginConfiguration(final Request request)
+		throws IOException {
+
 		// generate state value and save it in the session
 		final byte[] stateBytes = new byte[16];
 		this.rand.nextBytes(stateBytes);
@@ -1011,9 +1043,6 @@ public class OpenIDConnectAuthenticator
 
 		// add no form flag to the request
 		request.setAttribute(NOFORM_ATT, Boolean.valueOf(this.noForm));
-
-		// proceed to the login page
-		super.forwardToLoginPage(request, response, config);
 	}
 
 	/**
