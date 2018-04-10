@@ -147,8 +147,8 @@ public class OpenIDConnectAuthenticator
 		AuthErrorDesc(final JSONObject error) {
 
 			this.code = error.getString("error");
-			this.description = error.getString("error_description", null);
-			this.infoPageURI = error.getString("error_uri", null);
+			this.description = error.optString("error_description", null);
+			this.infoPageURI = error.optString("error_uri", null);
 		}
 
 
@@ -407,6 +407,12 @@ public class OpenIDConnectAuthenticator
 	private static final Pattern STATE_PATTERN = Pattern.compile(
 			"^(\\d+)Z(.+)");
 
+	/**
+	 * Pattern used to parse providers configuration and convert it into JSON.
+	 */
+	private static final Pattern OP_CONF_LINE_PATTERN = Pattern.compile(
+			"(\\w+)\\s*:\\s*(?:'([^']*)'|([^\\s,{}]+))");
+
 
 	/**
 	 * The log.
@@ -426,13 +432,13 @@ public class OpenIDConnectAuthenticator
 
 	/**
 	 * Name of the claim in the ID Token used as the username in the users
-	 * realm.
+	 * realm. Can be overridden for specific OPs.
 	 */
 	protected String usernameClaim = "sub";
 
 	/**
 	 * Space separated list of scopes to add to "openid" scope in the
-	 * authorization endpoint request.
+	 * authorization endpoint request. Can be overridden for specific OPs.
 	 */
 	protected String additionalScopes;
 
@@ -504,12 +510,12 @@ public class OpenIDConnectAuthenticator
 	/**
 	 * Set providers configuration.
 	 *
-	 * @param providers The providers configuration, which is a whitespace
-	 * separated list of descriptors, one for each configured provider. Each
-	 * descriptor is a comma-separated string that includes OP's issuer ID,
-	 * web-application's client ID, web-application's client secret and,
-	 * optionally, additional query string parameters for the OP's authorization
-	 * endpoint in {@code x-www-form-urlencoded} format.
+	 * @param providers The providers configuration, which is a JSON-like array
+	 * of descriptors, one for each configured provider. Unlike standard JSON,
+	 * the syntax does not use double quotes around the property names and
+	 * values (to make it XML attribute value friendly). The value can be
+	 * surrounded with single quotes if it contains commas, curly braces or
+	 * whitespace.
 	 */
 	public void setProviders(final String providers) {
 
@@ -640,10 +646,40 @@ public class OpenIDConnectAuthenticator
 						+ " \"providers\" property.");
 
 		// parse provider definitions and create the configurations provider
-		final String[] opDefs = this.providers.trim().split("\\s+");
-		this.opDescs = new ArrayList<>(opDefs.length);
-		for (final String opDef : opDefs)
-			this.opDescs.add(new OPDescriptor(opDef));
+		final String providersConf = this.providers.trim();
+		if (providersConf.startsWith("[")) {
+			final StringBuffer providersConfJSONBuf = new StringBuffer(512);
+			final Matcher m = OP_CONF_LINE_PATTERN.matcher(providersConf);
+			while (m.find()) {
+				m.appendReplacement(providersConfJSONBuf,
+					"\"" + m.group(1) + "\": \""
+					+ (m.group(2) != null ? m.group(2) : m.group(3)) + "\"");
+			}
+			m.appendTail(providersConfJSONBuf);
+			final String providersConfJSON = providersConfJSONBuf.toString();
+			try {
+				this.log.debug(
+					"parsing configuration JSON: " + providersConfJSON);
+				final JSONArray opDefs = new JSONArray(new JSONTokener(
+						new StringReader(providersConfJSON)));
+				final int numOPs = opDefs.length();
+				this.opDescs = new ArrayList<>(numOPs);
+				for (int i = 0; i < numOPs; i++) {
+					final Object opDef = opDefs.opt(i);
+					if ((opDef == null) || !(opDef instanceof JSONObject))
+						throw new LifecycleException("Expected an object at"
+								+ " OpenIDConnectAuthenticator \"providers\""
+								+ " array element " + i + ".");
+					this.opDescs.add(new OPDescriptor((JSONObject) opDef,
+							this.usernameClaim, this.additionalScopes));
+				}
+			} catch (final IOException | JSONException e) {
+				throw new LifecycleException("OpenIDConnectAuthenticator could"
+						+ " not parse \"providers\" property.", e);
+			}
+		} else { // deprecated syntax
+			this.opDescs = this.parseDeprecatedOPDefs(providersConf);
+		}
 		this.ops = new OPConfigurationsProvider(this.opDescs);
 
 		// preload provider configurations and detect any errors
@@ -657,6 +693,25 @@ public class OpenIDConnectAuthenticator
 
 		// proceed with initialization
 		super.startInternal();
+	}
+
+	/**
+	 * Parse deprecated OP configuration syntax.
+	 *
+	 * @param providersConf Configuration in deprecated syntax.
+	 * @return The OP descriptors.
+	 */
+	@SuppressWarnings("deprecation")
+	private List<OPDescriptor> parseDeprecatedOPDefs(
+			final String providersConf) {
+
+		final String[] defs = providersConf.split("\\s+");
+		final List<OPDescriptor> descs = new ArrayList<>(defs.length);
+		for (final String def : defs)
+			descs.add(new OPDescriptor(def,
+					this.usernameClaim, this.additionalScopes));
+
+		return descs;
 	}
 
 	/* (non-Javadoc)
@@ -1022,9 +1077,9 @@ public class OpenIDConnectAuthenticator
 			buf.setLength(0);
 			buf.append(opConfig.getAuthorizationEndpoint());
 			buf.append("?scope=openid");
-			if (this.additionalScopes != null)
-				buf.append(URLEncoder.encode(
-						" " + this.additionalScopes, UTF8.name()));
+			final String extraScopes = opDesc.getAdditionalScopes();
+			if (extraScopes != null)
+				buf.append(URLEncoder.encode(" " + extraScopes, UTF8.name()));
 			buf.append("&response_type=code");
 			buf.append("&client_id=").append(URLEncoder.encode(
 					opDesc.getClientId(), UTF8.name()));
@@ -1032,7 +1087,7 @@ public class OpenIDConnectAuthenticator
 					this.getBaseURL(request) + Constants.FORM_ACTION,
 					UTF8.name()));
 			buf.append("&state=").append(i).append('Z').append(state);
-			final String addlParams = opDesc.getAdditionalAuthorizationParams();
+			final String addlParams = opDesc.getExtraAuthEndpointParams();
 			if (addlParams != null)
 				buf.append('&').append(addlParams);
 
@@ -1161,7 +1216,8 @@ public class OpenIDConnectAuthenticator
 		// call the token endpoint, check if error and get the ID token
 		final JSONObject tokenResponse =
 			this.callTokenEndpoint(opDesc, authCode, request);
-		if (tokenResponse.has("error")) {
+		final String tokenResponseError = tokenResponse.optString("error");
+		if (tokenResponseError.length() > 0) {
 			final AuthErrorDesc authError = new AuthErrorDesc(tokenResponse);
 			if (debug)
 				this.log.debug("token error response: " + authError.getCode());
@@ -1249,12 +1305,25 @@ public class OpenIDConnectAuthenticator
 		// the token is valid, proceed:
 
 		// get username from the ID token
-		final String username =
-			idTokenPayload.getString(this.usernameClaim, null);
+		JSONObject usernameClaimContainer = idTokenPayload;
+		final String[] usernameClaimParts = opDesc.getUsernameClaimParts();
+		for (int i = 0; i < usernameClaimParts.length - 1; i++) {
+			final Object v = usernameClaimContainer.opt(usernameClaimParts[i]);
+			if ((v == null) || !(v instanceof JSONObject)) {
+				if (debug)
+					this.log.debug("the ID token does not contain the \""
+							+ opDesc.getUsernameClaim()
+							+ "\" claim used as the username claim");
+				return null;
+			}
+			usernameClaimContainer = (JSONObject) v;
+		}
+		final String username = usernameClaimContainer.optString(
+				usernameClaimParts[usernameClaimParts.length - 1], null);
 		if (username == null) {
 			if (debug)
 				this.log.debug("the ID token does not contain the \""
-						+ this.usernameClaim
+						+ opDesc.getUsernameClaim()
 						+ "\" claim used as the username claim");
 			return null;
 		}
@@ -1315,6 +1384,13 @@ public class OpenIDConnectAuthenticator
 
 			case "HS256":
 
+				if (opDesc.getClientSecret() == null) {
+					this.log.warn("client secret required for HS256 signature"
+							+ " algorithm is not configured, reporting"
+							+ " signature invalid");
+					return false;
+				}
+
 				final Mac mac = Mac.getInstance("HmacSHA256");
 				mac.init(new SecretKeySpec(Base64.decodeBase64(
 						opDesc.getClientSecret()), "HmacSHA256"));
@@ -1325,7 +1401,7 @@ public class OpenIDConnectAuthenticator
 
 			default:
 
-				this.log.warn("unsupported token signature algorythm \""
+				this.log.warn("unsupported token signature algorithm \""
 						+ sigAlg + "\", skipping signature verification");
 
 				return true;
@@ -1355,6 +1431,8 @@ public class OpenIDConnectAuthenticator
 			final String authCode, final Request request)
 		throws IOException {
 
+		final boolean debug = this.log.isDebugEnabled();
+
 		// get the OP configuration
 		final OPConfiguration opConfig =
 			this.ops.getOPConfiguration(opDesc.getIssuer());
@@ -1368,28 +1446,39 @@ public class OpenIDConnectAuthenticator
 				this.getBaseURL(request) + Constants.FORM_ACTION, UTF8.name()));
 		buf.append("&client_id=").append(URLEncoder.encode(
 				opDesc.getClientId(), UTF8.name()));
-		final String postBody = buf.toString();
-
-		// log the call
-		final boolean debug = this.log.isDebugEnabled();
-		if (debug)
-			this.log.debug("calling token endpoint at " + tokenEndpointURL
-					+ " with: " + postBody);
 
 		// configure connection
 		final HttpURLConnection con =
 			(HttpURLConnection) tokenEndpointURL.openConnection();
 		con.setConnectTimeout(this.httpConnectTimeout);
 		con.setReadTimeout(this.httpReadTimeout);
-		con.setInstanceFollowRedirects(false);
-		con.addRequestProperty("Authorization",
-				"Basic " + Base64.encodeBase64String(
-						(opDesc.getClientId() + ":" + opDesc.getClientSecret())
-							.getBytes(UTF8)));
+		con.setDoOutput(true);
 		con.addRequestProperty("Content-Type",
 				"application/x-www-form-urlencoded");
 		con.addRequestProperty("Accept", "application/json");
-		con.setDoOutput(true);
+		con.setInstanceFollowRedirects(false);
+
+		// configure authentication
+		switch (opDesc.getTokenEndpointAuthMethod()) {
+		case CLIENT_SECRET_BASIC:
+			con.addRequestProperty("Authorization",
+				"Basic " + Base64.encodeBase64String(
+						(opDesc.getClientId() + ":" + opDesc.getClientSecret())
+								.getBytes(UTF8)));
+			break;
+		case CLIENT_SECRET_POST:
+			buf.append("&client_secret=").append(URLEncoder.encode(
+					opDesc.getClientSecret(), UTF8.name()));
+			break;
+		default:
+			// nothing
+		}
+
+		// finish POST body and log the call
+		final String postBody = buf.toString();
+		if (debug)
+			this.log.debug("calling token endpoint at " + tokenEndpointURL
+					+ " with: " + postBody);
 
 		// send POST and read response
 		final JSONObject response;
