@@ -84,12 +84,39 @@ Here is an example of the valve configuration with multiple OpenID Providers and
 
 ```xml
 <Valve className="org.bsworks.catalina.authenticator.oidc.OpenIDConnectAuthenticator"
-       providers="
-https://example.auth0.com/,7x9e5ozKO0JZc6JdriadVEvLpodz0182,jBmfqhKmBYe-zvcQCju8MT3nfP4g6mUvex1BdpH8-Tz5mx7x8brpmQfgw_Nyu4Px
-https://accounts.google.com,234571258471-9l1hgspl0qtuqohn80gat3j0vqo61cho.apps.googleusercontent.com,FRQFgCcSzyurnNJG-xVvMs8L,hd=example.com
-https://cognito-idp.us-east-1.amazonaws.com/us-east-1_AGKCjG3dQ,lz63q5p6qfn1ibjup0hn7jwka,1mz5n48ockpvqfirfkei7chgbo223ndgiblorrf4ksmcomr2itec
-https://sts.windows.net/45185e72-2ac1-4371-acec-d0b6d4469ce2/,817343e7-2f24-4951-acd1-8285665280c3,WLvE8nEz0zHOxrv1XrVLSzMd21URsx4i6owlv9059wk=
-       "
+       providers="[
+           {
+		       issuer: https://example.auth0.com/,
+			   clientId: 7x9e5ozKO0JZc6JdriadVEvLpodz0182,
+			   clientSecret: jBmfqhKmBYe-zvcQCju8MT3nfP4g6mUvex1BdpH8-Tz5mx7x8brpmQfgw_Nyu4Px
+		   },
+           {
+		       issuer: https://accounts.google.com,
+			   clientId: 234571258471-9l1hgspl0qtuqohn80gat3j0vqo61cho.apps.googleusercontent.com,
+			   clientSecret: FRQFgCcSzyurnNJG-xVvMs8L,
+			   extraAuthEndpointParams: {
+			       hd: example.com
+			   }
+		   },
+           {
+		       issuer: https://cognito-idp.us-east-1.amazonaws.com/us-east-1_AGKCjG3dQ,
+			   clientId: lz63q5p6qfn1ibjup0hn7jwka,
+			   clientSecret: 1mz5n48ockpvqfirfkei7chgbo223ndgiblorrf4ksmcomr2itec
+		   },
+           {
+		       issuer: https://sts.windows.net/45185e72-2ac1-4371-acec-d0b6d4469ce2/,
+			   clientId: 817343e7-2f24-4951-acd1-8285665280c3,
+			   clientSecret: WLvE8nEz0zHOxrv1XrVLSzMd21URsx4i6owlv9059wk=
+		   },
+           {
+               issuer: https://sso.empoweriam.com,
+               configurationDocumentUrl: https://sso.empoweriam.com/oauth/.well-known/openid-configuration,
+               clientId: 8c3e74b6-7dfb-451f-ac2f-219deb353a70,
+               clientSecret: 17aebdf6-1177-4a5d-bff3-e33b7a8c0223,
+               tokenEndpointAuthMethod: client_secret_post,
+               usernameClaim: attrib.email
+           }
+       ]"
        usernameClaim="email" additionalScopes="email" />
 ```
 
