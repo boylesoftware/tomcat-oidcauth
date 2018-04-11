@@ -49,11 +49,12 @@ import org.bsworks.util.json.JSONTokener;
 
 
 /**
- * <em>OpenID Connect</em> authenticator.
+ * Base <em>OpenID Connect</em> authenticator implementation for different
+ * versions of <em>Tomcat</em>.
  *
  * @author Lev Himmelfarb
  */
-public class OpenIDConnectAuthenticator
+public abstract class BaseOpenIDConnectAuthenticator
 	extends FormAuthenticator {
 
 	/**
@@ -786,11 +787,17 @@ public class OpenIDConnectAuthenticator
 		return descs;
 	}
 
-	/* (non-Javadoc)
-	 * See overridden method.
+	/**
+	 * Perform authentication.
+	 *
+	 * @param request The request.
+	 * @param response The response.
+	 *
+	 * @return Authentication result.
+	 *
+	 * @throws IOException If an I/O error happens.
 	 */
-	@Override
-	protected boolean doAuthenticate(final Request request,
+	protected boolean performAuthentication(final Request request,
 			final HttpServletResponse response)
 		throws IOException {
 

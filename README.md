@@ -1,6 +1,8 @@
 # OpenID Connect Authenticator for Tomcat
 
-This is an authenticator implementation for [Apache Tomcat 8.5](http://tomcat.apache.org/) that allows web-applications to use [OpenID Connect](http://openid.net/connect/) to log users in.
+This is an authenticator implementation for [Apache Tomcat](http://tomcat.apache.org/) 8.5 and 8.0 that allows web-applications to use [OpenID Connect](http://openid.net/connect/) to log users in.
+
+References to Tomcat documenation in this manual link to Tomcat version 8.5. Corresponding pages for Tomcat 8.0 can be easily found in Tomcat 8.0 documenation.
 
 ## Table of Contents
 
@@ -37,12 +39,21 @@ http://boylesoftware.com/maven/repo-os/org/bsworks/catalina/authenticator/oidc/t
 
 The JAR then can be added to the Tomcat's classpath. For example, by placing it in `$CATALINA_BASE/lib` directory (see Tomcat's [Class Loader How-To](http://tomcat.apache.org/tomcat-8.5-doc/class-loader-howto.html) for more info).
 
+Tomcat version 8.5 and version 8.0 have slightly different interface for the authenticators. That is why there are two binaries of the authenticator, one for each version of Tomcat. Make sure that you use one built for the correct version.
+
 ## Configuration
 
-The authenticator is added to Tomcat configuration as a [Valve](http://tomcat.apache.org/tomcat-8.5-doc/config/valve.html). Normally, it goes into the web-application's [Context](http://tomcat.apache.org/tomcat-8.5-doc/config/context.html). For example:
+The authenticator is added to Tomcat configuration as a [Valve](http://tomcat.apache.org/tomcat-8.5-doc/config/valve.html). Normally, it goes into the web-application's [Context](http://tomcat.apache.org/tomcat-8.5-doc/config/context.html). For example, for Tomcat 8.5:
 
 ```xml
-<Valve className="org.bsworks.catalina.authenticator.oidc.OpenIDConnectAuthenticator"
+<Valve className="org.bsworks.catalina.authenticator.oidc.tomcat85.OpenIDConnectAuthenticator"
+       providers="..." />
+```
+
+For Tomcat 8.0 it will look like the following:
+
+```xml
+<Valve className="org.bsworks.catalina.authenticator.oidc.tomcat80.OpenIDConnectAuthenticator"
        providers="..." />
 ```
 
@@ -85,7 +96,7 @@ In addition to the attributes described above, all the attributes of the standar
 Here is an example of the valve configuration with multiple OpenID Providers and use of the email address as the username:
 
 ```xml
-<Valve className="org.bsworks.catalina.authenticator.oidc.OpenIDConnectAuthenticator"
+<Valve className="org.bsworks.catalina.authenticator.oidc.tomcat85.OpenIDConnectAuthenticator"
        providers="[
            {
                name: Auth0,

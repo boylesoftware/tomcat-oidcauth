@@ -17,11 +17,11 @@
 
 	<groupId>org.bsworks.catalina.authenticator.oidc</groupId>
 	<artifactId>tomcat8-oidcauth</artifactId>
-	<version>2.1.2-SNAPSHOT</version>
+	<version>2.2.0-SNAPSHOT</version>
 	<packaging>jar</packaging>
 
 	<name>OpenID Connect Authenticator</name>
-	<description>Apache Tomcat 8.5 authenticator implementation that extends the standard form-based authenticator and adds OpenID Connect functionality.</description>
+	<description>Apache Tomcat 8 authenticator implementation that extends the standard form-based authenticator and adds OpenID Connect functionality.</description>
 	<url>https://github.com/boylesoftware/tomcat8-oidcauth</url>
 	<inceptionYear>2015</inceptionYear>
 
@@ -56,18 +56,74 @@
 	</repositories>
 
 	<properties>
-		<tomcat.version>8.5.27</tomcat.version>
+		<tomcat.version>8.0.1</tomcat.version> <!-- overridden in profile -->
 	</properties>
 
 	<build>
 		<plugins>
 			<plugin>
 				<groupId>org.apache.maven.plugins</groupId>
+				<artifactId>maven-enforcer-plugin</artifactId>
+				<version>3.0.0-M1</version>
+				<executions>
+					<execution>
+						<goals>
+							<goal>enforce</goal>
+						</goals>
+						<configuration>
+							<rules>
+								<requireActiveProfile>
+									<profiles>tomcat80,tomcat85</profiles>
+									<all>false</all>
+									<message>One of the tomcat profiles must be activated.</message>
+								</requireActiveProfile>
+							</rules>
+						</configuration>
+					</execution>
+				</executions>
+			</plugin>
+			<plugin>
+				<groupId>org.apache.maven.plugins</groupId>
+				<artifactId>maven-compiler-plugin</artifactId>
+				<configuration>
+					<includes>
+						<include>**/org/bsworks/catalina/authenticator/oidc/${marker}/*.java</include>
+					</includes>
+				</configuration>
+			</plugin>
+			<plugin>
+				<groupId>org.apache.maven.plugins</groupId>
+				<artifactId>maven-jar-plugin</artifactId>
+				<version>3.1.0</version>
+				<configuration>
+					<classifier>${marker}</classifier>
+				</configuration>
+			</plugin>
+			<plugin>
+				<groupId>org.apache.maven.plugins</groupId>
+				<artifactId>maven-source-plugin</artifactId>
+				<configuration>
+					<classifier>${marker}-sources</classifier>
+					<includes>
+						<include>**/org/bsworks/catalina/authenticator/oidc/*.java</include>
+						<include>**/org/bsworks/catalina/authenticator/oidc/${marker}/*.java</include>
+						<include>**/org/bsworks/util/json/*.java</include>
+					</includes>
+				</configuration>
+			</plugin>
+			<plugin>
+				<groupId>org.apache.maven.plugins</groupId>
 				<artifactId>maven-javadoc-plugin</artifactId>
 				<configuration>
+					<classifier>${marker}-javadoc</classifier>
+					<sourceFileIncludes>
+						<include>**/org/bsworks/catalina/authenticator/oidc/*.java</include>
+						<include>**/org/bsworks/catalina/authenticator/oidc/${marker}/*.java</include>
+						<include>**/org/bsworks/util/json/*.java</include>
+					</sourceFileIncludes>
 					<links>
 						<link>http://docs.oracle.com/javaee/7/api/</link>
-						<link>http://tomcat.apache.org/tomcat-8.5-doc/api/</link>
+						<link>http://tomcat.apache.org/tomcat-${tomcat.specVersion}-doc/api/</link>
 					</links>
 				</configuration>
 			</plugin>
@@ -94,5 +150,24 @@
 			<scope>provided</scope>
 		</dependency>
 	</dependencies>
+
+	<profiles>
+		<profile>
+			<id>tomcat80</id>
+			<properties>
+				<marker>tomcat80</marker>
+				<tomcat.specVersion>8.0</tomcat.specVersion>
+				<tomcat.version>8.0.50</tomcat.version>
+			</properties>
+		</profile>
+		<profile>
+			<id>tomcat85</id>
+			<properties>
+				<marker>tomcat85</marker>
+				<tomcat.specVersion>8.5</tomcat.specVersion>
+				<tomcat.version>8.5.30</tomcat.version>
+			</properties>
+		</profile>
+	</profiles>
 
 </project>
