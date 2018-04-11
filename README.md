@@ -4,6 +4,8 @@ This is an authenticator implementation for [Apache Tomcat](http://tomcat.apache
 
 References to Tomcat documenation in this manual link to Tomcat version 8.5. Corresponding pages for Tomcat 8.0 can be easily found in Tomcat 8.0 documenation.
 
+A complete sample web-application is available at https://github.com/boylesoftware/tomcat8-oidcauth-sample.
+
 ## Table of Contents
 
 * [Introduction](#introduction)
