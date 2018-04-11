@@ -1,6 +1,7 @@
 package org.bsworks.catalina.authenticator.oidc;
 
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.io.Reader;
@@ -61,6 +62,11 @@ public class OpenIDConnectAuthenticator
 	public static final class AuthEndpointDesc {
 
 		/**
+		 * OP name.
+		 */
+		private final String name;
+
+		/**
 		 * Issuer ID.
 		 */
 		private final String issuer;
@@ -74,15 +80,28 @@ public class OpenIDConnectAuthenticator
 		/**
 		 * Create new descriptor.
 		 *
+		 * @param name OP name.
 		 * @param issuer Issuer ID.
 		 * @param url Endpoint URL.
 		 */
-		AuthEndpointDesc(final String issuer, final String url) {
+		AuthEndpointDesc(final String name, final String issuer,
+				final String url) {
 
+			this.name = name;
 			this.issuer = issuer;
 			this.url = url;
 		}
 
+
+		/**
+		 * Get OP name.
+		 *
+		 * @return The OP name.
+		 */
+		public String getName() {
+
+			return this.name;
+		}
 
 		/**
 		 * Get issuer ID.
@@ -354,6 +373,57 @@ public class OpenIDConnectAuthenticator
 			buf.append("\n  idToken:      ").append(this.idToken);
 
 			return buf.toString();
+		}
+	}
+
+
+	/**
+	 * OP token endpoint response.
+	 */
+	private static final class TokenEndpointResponse {
+
+		/**
+		 * Response HTTP status code.
+		 */
+		final int responseCode;
+
+		/**
+		 * Response date.
+		 */
+		final Date responseDate;
+
+		/**
+		 * Response body.
+		 */
+		final JSONObject responseBody;
+
+
+		/**
+		 * Create new object representing a response.
+		 *
+		 * @param responseCode Response HTTP status code.
+		 * @param responseDate Response date.
+		 * @param responseBody Response body.
+		 */
+		TokenEndpointResponse(final int responseCode, final long responseDate,
+				final JSONObject responseBody) {
+
+			this.responseCode = responseCode;
+			this.responseDate = new Date(
+				responseDate != 0 ? responseDate : System.currentTimeMillis());
+			this.responseBody = responseBody;
+		}
+
+
+		/* (non-Javadoc)
+		 * @see java.lang.Object#toString()
+		 */
+		@Override
+		public String toString() {
+
+			return "status: " + this.responseCode + ", date: "
+					+ DateFormat.getDateTimeInstance().format(this.responseDate)
+					+ ", body: " + this.responseBody;
 		}
 	}
 
@@ -652,8 +722,10 @@ public class OpenIDConnectAuthenticator
 			final Matcher m = OP_CONF_LINE_PATTERN.matcher(providersConf);
 			while (m.find()) {
 				m.appendReplacement(providersConfJSONBuf,
-					"\"" + m.group(1) + "\": \""
-					+ (m.group(2) != null ? m.group(2) : m.group(3)) + "\"");
+					Matcher.quoteReplacement(
+						"\"" + m.group(1) + "\": \""
+						+ (m.group(2) != null ? m.group(2) : m.group(3))
+						+ "\""));
 			}
 			m.appendTail(providersConfJSONBuf);
 			final String providersConfJSON = providersConfJSONBuf.toString();
@@ -1092,7 +1164,8 @@ public class OpenIDConnectAuthenticator
 				buf.append('&').append(addlParams);
 
 			// add the URL to the map
-			authEndpoints.add(new AuthEndpointDesc(issuer, buf.toString()));
+			authEndpoints.add(new AuthEndpointDesc(
+					opDesc.getName(), issuer, buf.toString()));
 		}
 		request.setAttribute(AUTHEPS_ATT, authEndpoints);
 
@@ -1214,20 +1287,24 @@ public class OpenIDConnectAuthenticator
 		}
 
 		// call the token endpoint, check if error and get the ID token
-		final JSONObject tokenResponse =
+		final TokenEndpointResponse tokenResponse =
 			this.callTokenEndpoint(opDesc, authCode, request);
-		final String tokenResponseError = tokenResponse.optString("error");
-		if (tokenResponseError.length() > 0) {
-			final AuthErrorDesc authError = new AuthErrorDesc(tokenResponse);
+		final String tokenErrorCode =
+				tokenResponse.responseBody.optString("error");
+		if ((tokenResponse.responseCode != HttpURLConnection.HTTP_OK) ||
+				(tokenErrorCode.length() > 0)) {
+			final AuthErrorDesc authError =
+				new AuthErrorDesc(tokenResponse.responseBody);
 			if (debug)
 				this.log.debug("token error response: " + authError.getCode());
+			request.setAttribute(AUTHERROR_ATT, authError);
 			return null;
 		}
 
 		// create the authorization object
-		// TODO: the date better taken from token response "Date" header
 		final Authorization authorization =
-			new Authorization(issuer, new Date(), tokenResponse);
+			new Authorization(issuer, tokenResponse.responseDate,
+					tokenResponse.responseBody);
 
 		// decode the ID token
 		final String[] idTokenParts = authorization.getIdToken().split("\\.");
@@ -1422,12 +1499,12 @@ public class OpenIDConnectAuthenticator
 	 * endpoint.
 	 * @param request The request.
 	 *
-	 * @return The token endpoint response JSON.
+	 * @return The token endpoint response.
 	 *
 	 * @throws IOException If an I/O error happens communicating with the
 	 * endpoint.
 	 */
-	protected JSONObject callTokenEndpoint(final OPDescriptor opDesc,
+	protected TokenEndpointResponse callTokenEndpoint(final OPDescriptor opDesc,
 			final String authCode, final Request request)
 		throws IOException {
 
@@ -1481,15 +1558,26 @@ public class OpenIDConnectAuthenticator
 					+ " with: " + postBody);
 
 		// send POST and read response
-		final JSONObject response;
+		JSONObject responseBody;
 		try (final OutputStream out = con.getOutputStream()) {
 			out.write(postBody.getBytes(UTF8.name()));
 			out.flush();
 			try (final Reader in = new InputStreamReader(
 					con.getInputStream(), UTF8)) {
-				response = new JSONObject(new JSONTokener(in));
+				responseBody = new JSONObject(new JSONTokener(in));
+			} catch (final IOException e) {
+				final InputStream errorStream = con.getErrorStream();
+				if (errorStream == null)
+					throw e;
+				try (final Reader in = new InputStreamReader(errorStream, UTF8)) {
+					responseBody = new JSONObject(new JSONTokener(in));
+				}
 			}
 		}
+
+		// create response object
+		final TokenEndpointResponse response = new TokenEndpointResponse(
+				con.getResponseCode(), con.getDate(), responseBody);
 
 		// log the response
 		if (debug)

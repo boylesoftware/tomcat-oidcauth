@@ -52,6 +52,8 @@ The authenticator is configured using the following attributes on the valve:
 
   * `issuer` _(required)_ - The OP's unique _Issuer Identifier_ corresponding to the `iss` claim in the [ID Token](http://openid.net/specs/openid-connect-core-1_0.html#IDToken). The issuer identifier is a URL that is used for identifying the OP to the application, validating the ID Token `iss` claim and, unless `documentConfigurationUrl` property described below is included, to load the OP configuration document according to the [OpenID Connect Discovery](http://openid.net/specs/openid-connect-discovery-1_0.html)'s [Obtaining OpenID Provider Configuration Information](http://openid.net/specs/openid-connect-discovery-1_0.html#ProviderConfig) process (by adding `.well-known/openid-configuration` to the issuer identifier to form the OP configuration document URL).
 
+  * `name` _(optional)_ - Application specific OP name made available to the login page. If not specified, defaults to the `issuer`.
+
   * `clientId` _(required)_ - The client ID associated with the web-application at the OP.
 
   * `clientSecret` _(optional)_ - The client secret. Note, that most of the OPs require a client secret to make calls to the OP endpoints. However, some OPs may support public clients so no client secret is utilized.
@@ -86,11 +88,13 @@ Here is an example of the valve configuration with multiple OpenID Providers and
 <Valve className="org.bsworks.catalina.authenticator.oidc.OpenIDConnectAuthenticator"
        providers="[
            {
+               name: Auth0,
                issuer: https://example.auth0.com/,
                clientId: 7x9e5ozKO0JZc6JdriadVEvLpodz0182,
                clientSecret: jBmfqhKmBYe-zvcQCju8MT3nfP4g6mUvex1BdpH8-Tz5mx7x8brpmQfgw_Nyu4Px
            },
            {
+               name: Google,
                issuer: https://accounts.google.com,
                clientId: 234571258471-9l1hgspl0qtuqohn80gat3j0vqo61cho.apps.googleusercontent.com,
                clientSecret: FRQFgCcSzyurnNJG-xVvMs8L,
@@ -99,16 +103,19 @@ Here is an example of the valve configuration with multiple OpenID Providers and
                }
            },
            {
+               name: 'Amazon Cognito',
                issuer: https://cognito-idp.us-east-1.amazonaws.com/us-east-1_AGKCjG3dQ,
                clientId: lz63q5p6qfn1ibjup0hn7jwka,
                clientSecret: 1mz5n48ockpvqfirfkei7chgbo223ndgiblorrf4ksmcomr2itec
            },
            {
+               name: 'Microsoft Azure AD',
                issuer: https://sts.windows.net/45185e72-2ac1-4371-acec-d0b6d4469ce2/,
                clientId: 817343e7-2f24-4951-acd1-8285665280c3,
                clientSecret: WLvE8nEz0zHOxrv1XrVLSzMd21URsx4i6owlv9059wk=
            },
            {
+               name: empowerID,
                issuer: https://sso.empoweriam.com,
                configurationDocumentUrl: https://sso.empoweriam.com/oauth/.well-known/openid-configuration,
                clientId: 8c3e74b6-7dfb-451f-ac2f-219deb353a70,
@@ -164,6 +171,7 @@ Normally, an application that uses form-based authentication has something like 
 As an extension, the _OpenID Connect Authenticator_ provides the login page with a request attribute under name `org.bsworks.oidc.authEndpoints` with the list of authorization endpoints for each OP configured on the authenticator's valve. Each endpoint element includes two properties:
 
 * `issuer` - The OP's Issuer Identifier.
+* `name` - Application-specific OP name.
 * `url` - The URL, to which to direct the user's browser for the login.
 
 Also, `org.bsworks.oidc.noForm` request attribute contains the `noForm` flag from the authenticator's valve configuration. So, a login page that allows login using multiple OPs as well as the local login form may look like the following:
@@ -177,7 +185,7 @@ Also, `org.bsworks.oidc.noForm` request attribute contains the `noForm` flag fro
 <h2>Using OpenID Connect</h2>
 <ul>
   <c:forEach items="${authEndpoints}" var="ep">
-  <li><a href="${ep.url}"><c:out value="${ep.issuer}"/></a></li>
+  <li><a href="${ep.url}"><c:out value="${ep.name}"/></a></li>
   </c:forEach>
 </ul>
 </c:if>

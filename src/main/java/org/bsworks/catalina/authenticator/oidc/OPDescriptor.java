@@ -22,6 +22,11 @@ class OPDescriptor {
 	private final String issuer;
 
 	/**
+	 * OP name.
+	 */
+	private final String name;
+
+	/**
 	 * OP configuration document URL.
 	 */
 	private final URL configurationDocumentUrl;
@@ -88,6 +93,7 @@ class OPDescriptor {
 						" values.");
 		int i = 0;
 		this.issuer = parts[i++];
+		this.name = this.issuer;
 		this.clientId = parts[i++];
 		final String secretVal = parts[i++];
 		this.clientSecret = (secretVal.length() > 0 ? secretVal : null);
@@ -126,6 +132,7 @@ class OPDescriptor {
 		if (this.issuer == null)
 			throw new IllegalArgumentException("Invalid OP definition:"
 					+ " missing \"issuer\" property.");
+		this.name = definition.optString("name", this.issuer);
 		this.clientId = definition.optString("clientId", null);
 		if (this.clientId == null)
 			throw new IllegalArgumentException("Invalid OP definition:"
@@ -210,6 +217,16 @@ class OPDescriptor {
 	String getIssuer() {
 
 		return this.issuer;
+	}
+
+	/**
+	 * Get application-specific OP name.
+	 *
+	 * @return The name.
+	 */
+	String getName() {
+
+		return this.name;
 	}
 
 	/**
