@@ -1528,8 +1528,6 @@ public abstract class BaseOpenIDConnectAuthenticator
 		buf.append("&code=").append(URLEncoder.encode(authCode, UTF8.name()));
 		buf.append("&redirect_uri=").append(URLEncoder.encode(
 				this.getBaseURL(request) + Constants.FORM_ACTION, UTF8.name()));
-		buf.append("&client_id=").append(URLEncoder.encode(
-				opDesc.getClientId(), UTF8.name()));
 
 		// configure connection
 		final HttpURLConnection con =
@@ -1551,6 +1549,8 @@ public abstract class BaseOpenIDConnectAuthenticator
 								.getBytes(UTF8)));
 			break;
 		case CLIENT_SECRET_POST:
+			buf.append("&client_id=").append(URLEncoder.encode(
+					opDesc.getClientId(), UTF8.name()));
 			buf.append("&client_secret=").append(URLEncoder.encode(
 					opDesc.getClientSecret(), UTF8.name()));
 			break;

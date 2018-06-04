@@ -128,6 +128,12 @@ Here is an example of the valve configuration with multiple OpenID Providers and
                clientSecret: WLvE8nEz0zHOxrv1XrVLSzMd21URsx4i6owlv9059wk=
            },
            {
+                name: Okta,
+                issuer: https://example.okta.com,
+                clientId: 0oa16n2pagwGjnf6w2z9,
+                clientSecret: 7P_3LuCWhdl4QGoF38PxNDCoXRQB2QznVXf1s4CF
+           },
+           {
                name: empowerID,
                issuer: https://sso.empoweriam.com,
                configurationDocumentUrl: https://sso.empoweriam.com/oauth/.well-known/openid-configuration,
