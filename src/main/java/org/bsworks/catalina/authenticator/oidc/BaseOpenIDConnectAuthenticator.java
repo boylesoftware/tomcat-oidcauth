@@ -264,8 +264,8 @@ public abstract class BaseOpenIDConnectAuthenticator
 			this.issuer = issuer;
 			this.issuedAt = issuedAt;
 
-			this.accessToken = tokenResponse.getString("access_token");
-			this.tokenType = tokenResponse.getString("token_type");
+			this.accessToken = tokenResponse.optString("access_token", null);
+			this.tokenType = tokenResponse.optString("token_type", null);
 			this.expiresIn = tokenResponse.optInt("expires_in", -1);
 			this.refreshToken = tokenResponse.optString("refresh_token", null);
 			this.scope = tokenResponse.optString("scope", null);

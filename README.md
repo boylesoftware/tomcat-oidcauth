@@ -267,8 +267,8 @@ Every HTTP session successfully authenticated by the _OpenID Connect Authenticat
 
 * `issuer` - The OP's Issuer Identifier.
 * `issuedAt` - A `java.util.Date` with the timestamp when the authorization was issued.
-* `accessToken` - The Access Token.
-* `tokenType` - The Access Token type (normally "Bearer").
+* `accessToken` - Optional Access Token, or `null` if none.
+* `tokenType` - If Access Token is included, the token type (normally "Bearer"), or `null` if no Access Token is included.
 * `expiresIn` - An integer number of seconds after the authorization (access token) issue when it expires. In some cases this value is unavailable, in which case it's -1. That means the expiration period is defined by the OP somewhere else.
 * `refreshToken` - Optional refresh token, or `null` if none.
 * `scope` - Optional token scope. Usually `null`, which means the requested scope.
