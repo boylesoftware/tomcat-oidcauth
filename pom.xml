@@ -17,7 +17,7 @@
 
 	<groupId>org.bsworks.catalina.authenticator.oidc</groupId>
 	<artifactId>tomcat-oidcauth</artifactId>
-	<version>2.2.3-SNAPSHOT</version>
+	<version>2.2.3</version>
 	<packaging>jar</packaging>
 
 	<name>OpenID Connect Authenticator</name>
@@ -40,7 +40,8 @@
 	<scm>
 		<connection>scm:git:https://github.com/boylesoftware/tomcat-oidcauth.git</connection>
 		<developerConnection>scm:git:git@github.com:boylesoftware/tomcat-oidcauth.git</developerConnection>
-	</scm>
+	  <tag>release-2.2.3</tag>
+  </scm>
 
 	<issueManagement>
 		<system>GitHub</system>
