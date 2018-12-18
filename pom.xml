@@ -12,17 +12,17 @@
 	<parent>
 		<groupId>org.bsworks</groupId>
 		<artifactId>parent</artifactId>
-		<version>2.1.1</version>
+		<version>2.1.2</version>
 	</parent>
 
 	<groupId>org.bsworks.catalina.authenticator.oidc</groupId>
-	<artifactId>tomcat8-oidcauth</artifactId>
+	<artifactId>tomcat-oidcauth</artifactId>
 	<version>2.2.3-SNAPSHOT</version>
 	<packaging>jar</packaging>
 
 	<name>OpenID Connect Authenticator</name>
-	<description>Apache Tomcat 8 authenticator implementation that extends the standard form-based authenticator and adds OpenID Connect functionality.</description>
-	<url>https://github.com/boylesoftware/tomcat8-oidcauth</url>
+	<description>Apache Tomcat authenticator implementation that extends the standard form-based authenticator and adds OpenID Connect functionality.</description>
+	<url>https://github.com/boylesoftware/tomcat-oidcauth</url>
 	<inceptionYear>2015</inceptionYear>
 
 	<developers>
@@ -38,20 +38,20 @@
 	</developers>
 
 	<scm>
-		<connection>scm:git:https://github.com/boylesoftware/tomcat8-oidcauth.git</connection>
-		<developerConnection>scm:git:git@github.com:boylesoftware/tomcat8-oidcauth.git</developerConnection>
+		<connection>scm:git:https://github.com/boylesoftware/tomcat-oidcauth.git</connection>
+		<developerConnection>scm:git:git@github.com:boylesoftware/tomcat-oidcauth.git</developerConnection>
 		<tag>release-2.2.2</tag>
 	</scm>
 
 	<issueManagement>
 		<system>GitHub</system>
-		<url>https://github.com/boylesoftware/tomcat8-oidcauth/issues</url>
+		<url>https://github.com/boylesoftware/tomcat-oidcauth/issues</url>
 	</issueManagement>
 
 	<repositories>
 		<repository>
 			<id>boylesoftware-os</id>
-			<url>http://boylesoftware.com/maven/repo-os</url>
+			<url>https://boylesoftware.com/maven/repo-os</url>
 		</repository>
 	</repositories>
 
@@ -64,7 +64,7 @@
 			<plugin>
 				<groupId>org.apache.maven.plugins</groupId>
 				<artifactId>maven-enforcer-plugin</artifactId>
-				<version>3.0.0-M1</version>
+				<version>3.0.0-M2</version>
 				<executions>
 					<execution>
 						<goals>
@@ -73,7 +73,7 @@
 						<configuration>
 							<rules>
 								<requireActiveProfile>
-									<profiles>tomcat80,tomcat85</profiles>
+									<profiles>tomcat80,tomcat85,tomcat90</profiles>
 									<all>false</all>
 									<message>One of the tomcat profiles must be activated.</message>
 								</requireActiveProfile>
@@ -94,7 +94,7 @@
 			<plugin>
 				<groupId>org.apache.maven.plugins</groupId>
 				<artifactId>maven-jar-plugin</artifactId>
-				<version>3.1.0</version>
+				<version>3.1.1</version>
 				<configuration>
 					<classifier>${marker}</classifier>
 				</configuration>
@@ -122,8 +122,8 @@
 						<include>**/org/bsworks/util/json/*.java</include>
 					</sourceFileIncludes>
 					<links>
-						<link>http://docs.oracle.com/javaee/7/api/</link>
-						<link>http://tomcat.apache.org/tomcat-${tomcat.specVersion}-doc/api/</link>
+						<link>${javaee.javadoc.url}</link>
+						<link>https://tomcat.apache.org/tomcat-${tomcat.specVersion}-doc/api/</link>
 					</links>
 				</configuration>
 			</plugin>
@@ -157,7 +157,8 @@
 			<properties>
 				<marker>tomcat80</marker>
 				<tomcat.specVersion>8.0</tomcat.specVersion>
-				<tomcat.version>8.0.50</tomcat.version>
+				<tomcat.version>8.0.53</tomcat.version>
+				<javaee.javadoc.url>https://docs.oracle.com/javaee/7/api/</javaee.javadoc.url>
 			</properties>
 		</profile>
 		<profile>
@@ -165,7 +166,17 @@
 			<properties>
 				<marker>tomcat85</marker>
 				<tomcat.specVersion>8.5</tomcat.specVersion>
-				<tomcat.version>8.5.30</tomcat.version>
+				<tomcat.version>8.5.35</tomcat.version>
+				<javaee.javadoc.url>https://docs.oracle.com/javaee/7/api/</javaee.javadoc.url>
+			</properties>
+		</profile>
+		<profile>
+			<id>tomcat90</id>
+			<properties>
+				<marker>tomcat90</marker>
+				<tomcat.specVersion>9.0</tomcat.specVersion>
+				<tomcat.version>9.0.14</tomcat.version>
+				<javaee.javadoc.url>https://javaee.github.io/javaee-spec/javadocs/</javaee.javadoc.url>
 			</properties>
 		</profile>
 	</profiles>
