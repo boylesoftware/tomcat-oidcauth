@@ -1,0 +1,151 @@
+/*
+ * Gradle build script.
+ */
+
+plugins {
+	id 'java'
+	id 'maven-publish'
+}
+
+sourceCompatibility = '1.8'
+targetCompatibility = '1.8'
+
+group = 'org.bsworks.catalina.authenticator.oidc'
+version = '2.2.3-SNAPSHOT'
+
+task jar(type: Jar, overwrite: true) {}
+jar.enabled = false
+javadoc.enabled = false
+sourceSets.remove(sourceSets.main)
+
+sourceSets {
+	mainTomcat80 {
+		java {
+			srcDirs = ['src/common/java', 'src/tomcat80/java']
+		}
+	}
+	mainTomcat85 {
+		java {
+			srcDirs = ['src/common/java', 'src/tomcat85/java']
+		}
+	}
+	mainTomcat90 {
+		java {
+			srcDirs = ['src/common/java', 'src/tomcat90/java']
+		}
+	}
+}
+
+task compileJava(type: JavaCompile, overwrite: true) {
+	dependsOn compileMainTomcat80Java, compileMainTomcat85Java, compileMainTomcat90Java
+}
+
+ext.sharedManifest = manifest {
+	attributes(
+		'Implementation-Title': project.name,
+		'Implementation-Version': project.version,
+		'Implementation-Vendor': 'Boyle Software, Inc.'
+	)
+}
+
+task mainTomcat80Jar(type: Jar) {
+	classifier = 'tomcat80'
+	from sourceSets.mainTomcat80.output
+	manifest = project.manifest {
+		from sharedManifest
+	}
+}
+task mainTomcat85Jar(type: Jar) {
+	classifier 'tomcat85'
+	from sourceSets.mainTomcat85.output
+	manifest = project.manifest {
+		from sharedManifest
+	}
+}
+task mainTomcat90Jar(type: Jar) {
+	classifier 'tomcat90'
+	from sourceSets.mainTomcat90.output
+	manifest = project.manifest {
+		from sharedManifest
+	}
+}
+
+repositories {
+	mavenCentral()
+}
+
+dependencies {
+	mainTomcat80Implementation(
+		'org.apache.tomcat:tomcat-catalina:8.0.+',
+		'org.apache.tomcat:tomcat-juli:8.0.+',
+		'org.apache.tomcat:tomcat-util:8.0.+'
+	)
+	mainTomcat85Implementation(
+		'org.apache.tomcat:tomcat-catalina:8.5.+',
+		'org.apache.tomcat:tomcat-juli:8.5.+',
+		'org.apache.tomcat:tomcat-util:8.5.+'
+	)
+	mainTomcat90Implementation(
+		'org.apache.tomcat:tomcat-catalina:9.0.+',
+		'org.apache.tomcat:tomcat-juli:9.0.+',
+		'org.apache.tomcat:tomcat-util:9.0.+'
+	)
+}
+
+artifacts {
+	archives(
+		mainTomcat80Jar,
+		mainTomcat85Jar,
+		mainTomcat90Jar
+	)
+}
+
+publishing {
+	publications {
+		mavenJava(MavenPublication) {
+			pom {
+				name = 'OpenID Connect Authenticator'
+				description = 'Apache Tomcat authenticator implementation that extends the standard form-based authenticator and adds OpenID Connect functionality.'
+				url = 'https://github.com/boylesoftware/tomcat-oidcauth'
+				inceptionYear = '2015'
+				licenses {
+					license {
+						name = 'The Apache License, Version 2.0'
+						url = 'http://www.apache.org/licenses/LICENSE-2.0.txt'
+					}
+				}
+				organization {
+					name = 'Boyle Software, Inc.'
+					url = 'https://www.boylesoftware.com/'
+				}
+				developers {
+					developer {
+						id = 'levahim'
+						name = 'Lev Himmelfarb'
+						email = 'lev@boylesoftware.com'
+						timezone = 'America/New_York'
+					}
+				}
+				scm {
+					connection = 'scm:git:https://github.com/boylesoftware/tomcat-oidcauth.git'
+					developerConnection = 'scm:git:git@github.com:boylesoftware/tomcat-oidcauth.git'
+				}
+				issueManagement {
+					system = 'GitHub'
+					url = 'https://github.com/boylesoftware/tomcat-oidcauth/issues'
+				}
+			}
+			artifact mainTomcat80Jar
+			artifact mainTomcat85Jar
+			artifact mainTomcat90Jar
+		}
+	}
+	repositories {
+		maven {
+			name = 'Boyle Software Open Source Maven Repository'
+			def releasesRepoUrl = 'scp://www.boylesoftware.com/srv/maven/repo-os'
+			def snapshotsRepoUrl = "file://${buildDir}/repo"
+			url = project.version.endsWith('SNAPSHOT') ? snapshotsRepoUrl : releasesRepoUrl
+		}
+	}
+}

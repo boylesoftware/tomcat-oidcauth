@@ -1,0 +1,5 @@
+/*
+ * Gradle build settings.
+ */
+
+rootProject.name = 'tomcat-oidcauth'

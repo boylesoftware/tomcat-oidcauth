@@ -1,12 +1,10 @@
-# Maven
-/target/
-/pom.xml.tag
-/pom.xml.releaseBackup
-/pom.xml.versionsBackup
-/pom.xml.next
-/release.properties
+# Ignore Gradle project-specific cache directory
+.gradle
 
-# Eclipse
-/.classpath
-/.project
-/.settings/
+# Ignore Gradle build output directory
+build
+
+# Ignore Eclipse project files and directories
+.classpath
+.project
+.settings
