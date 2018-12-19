@@ -11,7 +11,7 @@ sourceCompatibility = '1.8'
 targetCompatibility = '1.8'
 
 group = 'org.bsworks.catalina.authenticator.oidc'
-version = '2.2.3-SNAPSHOT'
+version = '2.2.3'
 
 task jar(type: Jar, overwrite: true) {}
 jar.enabled = false
@@ -143,9 +143,7 @@ publishing {
 	repositories {
 		maven {
 			name = 'Boyle Software Open Source Maven Repository'
-			def releasesRepoUrl = 'scp://www.boylesoftware.com/srv/maven/repo-os'
-			def snapshotsRepoUrl = "file://${buildDir}/repo"
-			url = project.version.endsWith('SNAPSHOT') ? snapshotsRepoUrl : releasesRepoUrl
+			url = "file://${buildDir}/repo"
 		}
 	}
 }
