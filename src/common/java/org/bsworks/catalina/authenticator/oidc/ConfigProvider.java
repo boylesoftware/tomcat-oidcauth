@@ -129,7 +129,8 @@ abstract class ConfigProvider<T> {
 			(HttpURLConnection) this.documentURL.openConnection();
 		con.setConnectTimeout(CONNECT_TIMEOUT);
 		con.setReadTimeout(READ_TIMEOUT);
-		con.addRequestProperty("Accept", "application/json");
+		con.addRequestProperty("Accept",
+			"application/jwk-set+json, application/json");
 
 		// read and parse the document
 		final JSONObject document;
