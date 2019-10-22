@@ -11,7 +11,7 @@ sourceCompatibility = '1.8'
 targetCompatibility = '1.8'
 
 group = 'org.bsworks.catalina.authenticator.oidc'
-version = '2.2.4'
+version = '2.2.5'
 
 task jar(type: Jar, overwrite: true) {}
 jar.enabled = false

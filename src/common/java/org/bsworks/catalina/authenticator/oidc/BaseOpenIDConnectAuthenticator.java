@@ -21,6 +21,7 @@ import java.security.SignatureException;
 import java.text.DateFormat;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Base64;
 import java.util.Date;
 import java.util.List;
 import java.util.regex.Matcher;
@@ -40,7 +41,6 @@ import org.apache.catalina.connector.Request;
 import org.apache.juli.logging.Log;
 import org.apache.juli.logging.LogFactory;
 import org.apache.tomcat.util.buf.HexUtils;
-import org.apache.tomcat.util.codec.binary.Base64;
 import org.apache.tomcat.util.descriptor.web.LoginConfig;
 import org.bsworks.util.json.JSONArray;
 import org.bsworks.util.json.JSONException;
@@ -458,6 +458,17 @@ public abstract class BaseOpenIDConnectAuthenticator
 	 * UTF-8 charset.
 	 */
 	private static final Charset UTF8 = Charset.forName("UTF-8");
+
+	/**
+	 * URL-safe base64 decoder.
+	 */
+	private static final Base64.Decoder BASE64URL_DECODER =
+		Base64.getUrlDecoder();
+
+	/**
+	 * Base64 encoder.
+	 */
+	private static final Base64.Encoder BASE64_ENCODER = Base64.getEncoder();
 
 	/**
 	 * Name of the HTTP session note used to store the {@link Authorization}
@@ -1316,12 +1327,13 @@ public abstract class BaseOpenIDConnectAuthenticator
 		// decode the ID token
 		final String[] idTokenParts = authorization.getIdToken().split("\\.");
 		final JSONObject idTokenHeader = new JSONObject(new JSONTokener(
-				new StringReader(new String(Base64.decodeBase64(
+				new StringReader(new String(BASE64URL_DECODER.decode(
 						idTokenParts[0]), UTF8))));
 		final JSONObject idTokenPayload = new JSONObject(new JSONTokener(
-				new StringReader(new String(Base64.decodeBase64(
+				new StringReader(new String(BASE64URL_DECODER.decode(
 						idTokenParts[1]), UTF8))));
-		final byte[] idTokenSignature = Base64.decodeBase64(idTokenParts[2]);
+		final byte[] idTokenSignature = BASE64URL_DECODER.decode(
+				idTokenParts[2]);
 		if (debug)
 			this.log.debug("decoded ID token:"
 					+ "\n    header:    " + idTokenHeader
@@ -1476,7 +1488,7 @@ public abstract class BaseOpenIDConnectAuthenticator
 				}
 
 				final Mac mac = Mac.getInstance("HmacSHA256");
-				mac.init(new SecretKeySpec(Base64.decodeBase64(
+				mac.init(new SecretKeySpec(BASE64URL_DECODER.decode(
 						opDesc.getClientSecret()), "HmacSHA256"));
 				mac.update(data.getBytes("ASCII"));
 				final byte[] genSig = mac.doFinal();
@@ -1544,7 +1556,7 @@ public abstract class BaseOpenIDConnectAuthenticator
 		switch (opDesc.getTokenEndpointAuthMethod()) {
 		case CLIENT_SECRET_BASIC:
 			con.addRequestProperty("Authorization",
-				"Basic " + Base64.encodeBase64String(
+				"Basic " + BASE64_ENCODER.encodeToString(
 						(opDesc.getClientId() + ":" + opDesc.getClientSecret())
 								.getBytes(UTF8)));
 			break;
@@ -1638,7 +1650,7 @@ public abstract class BaseOpenIDConnectAuthenticator
 	 *
 	 * @param request The request.
 	 *
-	 * @return Base URL. 
+	 * @return Base URL.
 	 */
 	protected String getBaseURL(final Request request) {
 

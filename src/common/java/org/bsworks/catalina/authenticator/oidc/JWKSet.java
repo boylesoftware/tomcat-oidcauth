@@ -1,15 +1,16 @@
 package org.bsworks.catalina.authenticator.oidc;
 
+import java.math.BigInteger;
 import java.nio.charset.Charset;
 import java.security.KeyFactory;
 import java.security.NoSuchAlgorithmException;
 import java.security.PublicKey;
 import java.security.spec.InvalidKeySpecException;
 import java.security.spec.RSAPublicKeySpec;
+import java.util.Base64;
 import java.util.HashMap;
 import java.util.Map;
 
-import org.apache.tomcat.util.codec.binary.Base64;
 import org.bsworks.util.json.JSONArray;
 import org.bsworks.util.json.JSONObject;
 
@@ -49,16 +50,19 @@ class JWKSet {
 		this.keys = new HashMap<>();
 		try {
 			final JSONArray keysProp = document.getJSONArray("keys");
+			final Base64.Decoder base64 = Base64.getUrlDecoder();
 			for (int n = keysProp.length() - 1; n >= 0; n--) {
 				final JSONObject keyDef = keysProp.getJSONObject(n);
 				if (keyDef.optString("kty").equals("RSA")
 						&& keyDef.optString("use").equals("sig"))
 					this.keys.put(keyDef.getString("kid"),
 							keyFactory.generatePublic(new RSAPublicKeySpec(
-									Base64.decodeInteger(keyDef.getString("n")
-											.getBytes(ASCII)),
-									Base64.decodeInteger(keyDef.getString("e")
-											.getBytes(ASCII)))));
+									new BigInteger(1, base64.decode(
+											keyDef.getString("n").getBytes(
+													ASCII))),
+									new BigInteger(1, base64.decode(
+											keyDef.getString("e").getBytes(
+													ASCII))))));
 			}
 		} catch (final InvalidKeySpecException e) {
 			throw new IllegalArgumentException("Invalid key specification.", e);
