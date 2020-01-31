@@ -16,7 +16,6 @@ version = '2.2.5'
 task jar(type: Jar, overwrite: true) {}
 jar.enabled = false
 javadoc.enabled = false
-sourceSets.remove(sourceSets.main)
 
 sourceSets {
 	mainTomcat80 {
@@ -142,7 +141,7 @@ publishing {
 	}
 	repositories {
 		maven {
-			name = 'Boyle Software Open Source Maven Repository'
+			name = 'local'
 			url = "file://${buildDir}/repo"
 		}
 	}
