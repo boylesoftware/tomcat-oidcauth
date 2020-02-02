@@ -1,8 +1,8 @@
 # OpenID Connect Authenticator for Tomcat
 
-This is an authenticator implementation for [Apache Tomcat](http://tomcat.apache.org/) 9.0, 8.5 and 8.0 that allows web-applications to use [OpenID Connect](http://openid.net/connect/) to log users in.
+This is an authenticator implementation for [Apache Tomcat](http://tomcat.apache.org/) 9.0 and 8.5 that allows web-applications to use [OpenID Connect](http://openid.net/connect/) to log users in.
 
-References to Tomcat documenation in this manual link to Tomcat version 9.0. Corresponding pages for Tomcat 8.5 and 8.0 can be easily found on the Apache Tomcat website.
+References to Tomcat documenation in this manual link to Tomcat version 9.0. Corresponding pages for Tomcat 8.5 can be easily found on the Apache Tomcat website.
 
 A complete sample web-application is available at https://github.com/boylesoftware/tomcat-oidcauth-sample.
 
@@ -41,7 +41,7 @@ https://boylesoftware.com/maven/repo-os/org/bsworks/catalina/authenticator/oidc/
 
 The JAR need to be added to the Tomcat's classpath, for example, by placing it in `$CATALINA_BASE/lib` directory (see Tomcat's [Class Loader How-To](https://tomcat.apache.org/tomcat-9.0-doc/class-loader-howto.html) for more info).
 
-Tomcat versions 9.0 and 8.5 have slightly different interface for the authenticators compared to version 8.0. That is why there are binaries of the authenticator for each version of Tomcat. Make sure that you use one built for the correct Tomcat version.
+There are separate binaries of the authenticator for Tomcat version 8.5 and 9.0. Make sure that you use one that's built for your version of Tomcat.
 
 ## Configuration
 
@@ -52,10 +52,10 @@ The authenticator is added to Tomcat configuration as a [Valve](https://tomcat.a
        providers="..." />
 ```
 
-For Tomcat 8.0 it will look like the following:
+For Tomcat 8.5 it will look like the following:
 
 ```xml
-<Valve className="org.bsworks.catalina.authenticator.oidc.tomcat80.OpenIDConnectAuthenticator"
+<Valve className="org.bsworks.catalina.authenticator.oidc.tomcat85.OpenIDConnectAuthenticator"
        providers="..." />
 ```
 

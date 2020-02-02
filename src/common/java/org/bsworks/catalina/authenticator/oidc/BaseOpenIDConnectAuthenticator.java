@@ -430,6 +430,44 @@ public abstract class BaseOpenIDConnectAuthenticator
 
 
 	/**
+	 * Authenticated user descriptor.
+	 */
+	private static final class AuthedUser {
+
+		/**
+		 * Principal.
+		 */
+		final Principal principal;
+
+		/**
+		 * Username.
+		 */
+		final String username;
+
+		/**
+		 * Password, if any.
+		 */
+		final String password;
+
+
+		/**
+		 * Create new authenticated user descriptor.
+		 *
+		 * @param principal Principal.
+		 * @param username Username.
+		 * @param password Password, or {@code null} if not applicable.
+		 */
+		AuthedUser(final Principal principal,
+				final String username, final String password) {
+
+			this.principal = principal;
+			this.username = username;
+			this.password = password;
+		}
+	}
+
+
+	/**
 	 * Name of request attribute made available to the login page that maps
 	 * configured OP issuer IDs to the corresponding authorization endpoint
 	 * URLs.
@@ -722,6 +760,9 @@ public abstract class BaseOpenIDConnectAuthenticator
 	protected synchronized void startInternal()
 			throws LifecycleException {
 
+		// verify Tomcat version
+		this.ensureTomcatVersion();
+
 		// verify that providers are configured
 		if (this.providers == null)
 			throw new LifecycleException("OpenIDConnectAuthenticator requires"
@@ -780,6 +821,15 @@ public abstract class BaseOpenIDConnectAuthenticator
 	}
 
 	/**
+	 * Verify that the authenticator is running under a compatible version of
+	 * Tomcat.
+	 *
+	 * @throws LifecycleException If the Tomcat version is incompatible.
+	 */
+	protected abstract void ensureTomcatVersion()
+			throws LifecycleException;
+
+	/**
 	 * Parse deprecated OP configuration syntax.
 	 *
 	 * @param providersConf Configuration in deprecated syntax.
@@ -814,10 +864,6 @@ public abstract class BaseOpenIDConnectAuthenticator
 
 		final boolean debug = this.log.isDebugEnabled();
 
-		// check if already authenticated
-		if (this.checkForCachedAuthentication(request, response, true))
-			return true;
-
 		// try to reauthenticate if caching principal is disabled
 		if (!this.cache && this.reauthenticateNoCache(request, response))
 			return true;
@@ -825,6 +871,10 @@ public abstract class BaseOpenIDConnectAuthenticator
 		// check if resubmit after successful authentication
 		if (this.matchRequest(request))
 			return this.processResubmit(request, response);
+
+		// check if already authenticated
+		if (this.checkForCachedAuthentication(request, response, true))
+			return true;
 
 		// the request is not authenticated:
 
@@ -854,35 +904,33 @@ public abstract class BaseOpenIDConnectAuthenticator
 		if (session == null) {
 
 			// log using container log (why container?)
-			if (this.containerLog.isDebugEnabled())
-				this.containerLog.debug(
-						"user took so long to log on the session expired");
+			this.log.debug("user took so long to log on the session expired");
 
-			// redirect to the configured landing page, if any
-			if (!this.redirectToLandingPage(request, response))
-				response.sendError(HttpServletResponse.SC_REQUEST_TIMEOUT,
-						sm.getString("authenticator.sessionExpired"));
+			// process expired session
+			this.processExpiredSession(request, response);
 
 			// done, authentication failure
 			return false;
 		}
+		if (debug)
+			this.log.debug("existing session id " + session.getId());
 
-		// the authenticated principal
-		Principal principal = null;
+		// the authenticated user
+		AuthedUser authedUser = null;
 
 		// check if OIDC authentication response or form submission
 		if ((request.getParameter("code") != null)
 				|| (request.getParameter("error") != null)) {
-			principal = this.processAuthResponse(session,
+			authedUser = this.processAuthResponse(session,
 					request);
 		} else if (!this.noForm) { // form submission
-			principal = this.processAuthFormSubmission(session,
+			authedUser = this.processAuthFormSubmission(session,
 					request.getParameter(Constants.FORM_USERNAME),
 					request.getParameter(Constants.FORM_PASSWORD));
 		}
 
 		// check if authentication failure
-		if (principal == null) {
+		if (authedUser == null) {
 			this.forwardToErrorPage(request, response,
 					this.context.getLoginConfig());
 			return false;
@@ -890,14 +938,33 @@ public abstract class BaseOpenIDConnectAuthenticator
 
 		// successful authentication
 		if (debug)
-			this.log.debug("authentication of \"" + principal.getName()
-				+ "\" was successful");
+			this.log.debug("authentication of \""
+				+ authedUser.principal.getName() + "\" was successful");
+
+		// change session id (to prevent a session fixation attack)
+		if (this.getChangeSessionIdOnAuthentication()) {
+			final String expectedSessionId = (String) session.getNote(
+					Constants.SESSION_ID_NOTE);
+			if ((expectedSessionId == null) || !expectedSessionId.equals(
+					request.getRequestedSessionId())) {
+				if (debug)
+					this.log.debug("unable to change session id"
+							+ ", expiring the session: expected session id is "
+							+ expectedSessionId + ", requested session id is "
+							+ request.getRequestedSessionId());
+				session.expire();
+				this.processExpiredSession(request, response);
+				return false;
+			}
+		}
 
 		// save the authenticated principal in our session
-		session.setNote(Constants.FORM_PRINCIPAL_NOTE, principal);
+		this.register(request, response, authedUser.principal,
+				HttpServletRequest.FORM_AUTH,
+				authedUser.username, authedUser.password);
 
 		// get the original unauthenticated request URI
-		final String origRequestURI = savedRequestURL(session);
+		final String origRequestURI = this.savedRequestURL(session);
 		if (debug)
 			this.log.debug("redirecting to original URI: " + origRequestURI);
 
@@ -928,7 +995,7 @@ public abstract class BaseOpenIDConnectAuthenticator
 	 * @param request The request.
 	 * @param response The response.
 	 *
-	 * @return {@code true} if was successfully reauthenticated and not further
+	 * @return {@code true} if was successfully reauthenticated and no further
 	 * authentication action is required. If authentication logic should
 	 * proceed, returns {@code false}.
 	 */
@@ -979,8 +1046,12 @@ public abstract class BaseOpenIDConnectAuthenticator
 			return false;
 		}
 
-		// set principal on the session
-		session.setNote(Constants.FORM_PRINCIPAL_NOTE, principal);
+		// successfully reauthenticated, register the principal
+		if (debug)
+			this.log.debug("successfully reauthenticated username \""
+					+ username + "\"");
+		this.register(request, response, principal,
+				HttpServletRequest.FORM_AUTH, username, password);
 
 		// check if resubmit after successful authentication
 		if (this.matchRequest(request)) {
@@ -989,13 +1060,6 @@ public abstract class BaseOpenIDConnectAuthenticator
 						+ "\" for resubmit after successful authentication");
 			return false;
 		}
-
-		// successfully reauthenticated, register the principal
-		if (debug)
-			this.log.debug("successfully reauthenticated username \""
-					+ username + "\"");
-		this.register(request, response, principal,
-				HttpServletRequest.FORM_AUTH, username, password);
 
 		// no further authentication action required
 		return true;
@@ -1024,14 +1088,6 @@ public abstract class BaseOpenIDConnectAuthenticator
 		if (debug)
 			this.log.debug("restore request from session "
 					+ session.getIdInternal());
-
-		// get authenticated principal and register it on the request
-		final Principal principal =
-			(Principal) session.getNote(Constants.FORM_PRINCIPAL_NOTE);
-		this.register(request, response, principal,
-				HttpServletRequest.FORM_AUTH,
-				(String) session.getNote(Constants.SESS_USERNAME_NOTE),
-				(String) session.getNote(Constants.SESS_PASSWORD_NOTE));
 
 		// if principal is cached, remove authentication info from the session
 		if (this.cache) {
@@ -1198,9 +1254,9 @@ public abstract class BaseOpenIDConnectAuthenticator
 	 * @param username Submitted username.
 	 * @param password Submitted password.
 	 *
-	 * @return The authenticated principal, or {@code null} if login failure.
+	 * @return The authenticated user, or {@code null} if login failure.
 	 */
-	protected Principal processAuthFormSubmission(final Session session,
+	protected AuthedUser processAuthFormSubmission(final Session session,
 			final String username, final String password) {
 
 		final boolean debug = this.log.isDebugEnabled();
@@ -1217,12 +1273,8 @@ public abstract class BaseOpenIDConnectAuthenticator
 			return null;
 		}
 
-		// save authentication info in the session
-		session.setNote(Constants.SESS_USERNAME_NOTE, username);
-		session.setNote(Constants.SESS_PASSWORD_NOTE, password);
-
-		// return the principal
-		return principal;
+		// return the user descriptor
+		return new AuthedUser(principal, username, password);
 	}
 
 	/**
@@ -1231,12 +1283,12 @@ public abstract class BaseOpenIDConnectAuthenticator
 	 * @param session The session.
 	 * @param request The request representing the authentication response.
 	 *
-	 * @return The authenticated principal, or {@code null} if could not
+	 * @return The authenticated user, or {@code null} if could not
 	 * authenticate.
 	 *
 	 * @throws IOException If an I/O error happens communicating with the OP.
 	 */
-	protected Principal processAuthResponse(final Session session,
+	protected AuthedUser processAuthResponse(final Session session,
 			final Request request)
 		throws IOException {
 
@@ -1442,8 +1494,8 @@ public abstract class BaseOpenIDConnectAuthenticator
 		// save authorization in the session for the application
 		session.getSession().setAttribute(AUTHORIZATION_ATT, authorization);
 
-		// return the principal
-		return principal;
+		// return the user descriptor
+		return new AuthedUser(principal, username, null);
 	}
 
 	/**
@@ -1607,6 +1659,27 @@ public abstract class BaseOpenIDConnectAuthenticator
 	}
 
 	/**
+	 * Process the case when the session expired while waiting for the user
+	 * login input. If landing page is configured, tries to redirect to it.
+	 * Otherwise, sends back an request timeout error response.
+	 *
+	 * @param request The request.
+	 * @param response The response.
+	 *
+	 * @throws IOException If an I/O error happens communicating with the
+	 * client.
+	 */
+	protected void processExpiredSession(final Request request,
+			final HttpServletResponse response)
+		throws IOException {
+
+		// redirect to the configured landing page, if any
+		if (!this.redirectToLandingPage(request, response))
+			response.sendError(HttpServletResponse.SC_REQUEST_TIMEOUT,
+					sm.getString("authenticator.sessionExpired"));
+	}
+
+	/**
 	 * Redirect to the configured landing page, if any.
 	 *
 	 * @param request The request.
@@ -1665,5 +1738,20 @@ public abstract class BaseOpenIDConnectAuthenticator
 		baseURLBuf.append(request.getContextPath());
 
 		return baseURLBuf.toString();
+	}
+
+	@Override
+	public void logout(final Request request) {
+
+		final Session session = request.getSessionInternal(false);
+		if (session != null) {
+			session.removeNote(SESS_STATE_NOTE);
+			session.removeNote(Constants.SESS_USERNAME_NOTE);
+			session.removeNote(SESS_OIDC_AUTH_NOTE);
+			session.removeNote(Constants.FORM_REQUEST_NOTE);
+			session.getSession().removeAttribute(AUTHORIZATION_ATT);
+		}
+
+		super.logout(request);
 	}
 }

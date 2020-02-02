@@ -11,18 +11,13 @@ sourceCompatibility = '1.8'
 targetCompatibility = '1.8'
 
 group = 'org.bsworks.catalina.authenticator.oidc'
-version = '2.2.5'
+version = '2.3.0'
 
 task jar(type: Jar, overwrite: true) {}
 jar.enabled = false
 javadoc.enabled = false
 
 sourceSets {
-	mainTomcat80 {
-		java {
-			srcDirs = ['src/common/java', 'src/tomcat80/java']
-		}
-	}
 	mainTomcat85 {
 		java {
 			srcDirs = ['src/common/java', 'src/tomcat85/java']
@@ -36,7 +31,7 @@ sourceSets {
 }
 
 task compileJava(type: JavaCompile, overwrite: true) {
-	dependsOn compileMainTomcat80Java, compileMainTomcat85Java, compileMainTomcat90Java
+	dependsOn compileMainTomcat85Java, compileMainTomcat90Java
 }
 
 ext.sharedManifest = manifest {
@@ -47,13 +42,6 @@ ext.sharedManifest = manifest {
 	)
 }
 
-task mainTomcat80Jar(type: Jar) {
-	classifier = 'tomcat80'
-	from sourceSets.mainTomcat80.output
-	manifest = project.manifest {
-		from sharedManifest
-	}
-}
 task mainTomcat85Jar(type: Jar) {
 	classifier 'tomcat85'
 	from sourceSets.mainTomcat85.output
@@ -74,26 +62,20 @@ repositories {
 }
 
 dependencies {
-	mainTomcat80Implementation(
-		'org.apache.tomcat:tomcat-catalina:8.0.+',
-		'org.apache.tomcat:tomcat-juli:8.0.+',
-		'org.apache.tomcat:tomcat-util:8.0.+'
-	)
 	mainTomcat85Implementation(
-		'org.apache.tomcat:tomcat-catalina:8.5.+',
-		'org.apache.tomcat:tomcat-juli:8.5.+',
-		'org.apache.tomcat:tomcat-util:8.5.+'
+		'org.apache.tomcat:tomcat-catalina:[8.5.50,8.6.0)',
+		'org.apache.tomcat:tomcat-juli:[8.5.50,8.6.0)',
+		'org.apache.tomcat:tomcat-util:[8.5.50,8.6.0)'
 	)
 	mainTomcat90Implementation(
-		'org.apache.tomcat:tomcat-catalina:9.0.+',
-		'org.apache.tomcat:tomcat-juli:9.0.+',
-		'org.apache.tomcat:tomcat-util:9.0.+'
+		'org.apache.tomcat:tomcat-catalina:[9.0.30,9.1.0)',
+		'org.apache.tomcat:tomcat-juli:[9.0.30,9.1.0)',
+		'org.apache.tomcat:tomcat-util:[9.0.30,9.1.0)'
 	)
 }
 
 artifacts {
 	archives(
-		mainTomcat80Jar,
 		mainTomcat85Jar,
 		mainTomcat90Jar
 	)
@@ -134,7 +116,6 @@ publishing {
 					url = 'https://github.com/boylesoftware/tomcat-oidcauth/issues'
 				}
 			}
-			artifact mainTomcat80Jar
 			artifact mainTomcat85Jar
 			artifact mainTomcat90Jar
 		}
