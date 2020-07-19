@@ -493,6 +493,12 @@ public abstract class BaseOpenIDConnectAuthenticator
 		"org.bsworks.oidc.authorization";
 
 	/**
+	 * Name of session attribute used to store the idtoken string.
+	 */
+	public static final String AUTHORIZATION_ATT_IDTOKEN =
+		"org.bsworks.oidc.authorization.idtoken";
+
+	/**
 	 * UTF-8 charset.
 	 */
 	private static final Charset UTF8 = Charset.forName("UTF-8");
@@ -1493,6 +1499,7 @@ public abstract class BaseOpenIDConnectAuthenticator
 
 		// save authorization in the session for the application
 		session.getSession().setAttribute(AUTHORIZATION_ATT, authorization);
+		session.getSession().setAttribute(AUTHORIZATION_ATT_IDTOKEN, authorization.getIdToken());
 
 		// return the user descriptor
 		return new AuthedUser(principal, username, null);
@@ -1750,6 +1757,8 @@ public abstract class BaseOpenIDConnectAuthenticator
 			session.removeNote(SESS_OIDC_AUTH_NOTE);
 			session.removeNote(Constants.FORM_REQUEST_NOTE);
 			session.getSession().removeAttribute(AUTHORIZATION_ATT);
+			session.getSession().removeAttribute(AUTHORIZATION_ATT_IDTOKEN);
+
 		}
 
 		super.logout(request);
