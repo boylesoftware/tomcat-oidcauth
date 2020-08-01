@@ -5,11 +5,11 @@ import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.io.Reader;
+import java.io.Serializable;
 import java.io.StringReader;
 import java.io.UnsupportedEncodingException;
 import java.net.HttpURLConnection;
 import java.net.URL;
-import java.net.URLConnection;
 import java.net.URLEncoder;
 import java.nio.charset.Charset;
 import java.security.InvalidKeyException;
@@ -208,7 +208,12 @@ public abstract class BaseOpenIDConnectAuthenticator
 	 * The successful authorization information derived from the token endpoint
 	 * response.
 	 */
-	public static final class Authorization {
+	public static final class Authorization implements Serializable {
+
+		/**
+		 * Serial version id.
+		 */
+		private static final long serialVersionUID = 1L;
 
 		/**
 		 * Issuer ID.
@@ -721,7 +726,7 @@ public abstract class BaseOpenIDConnectAuthenticator
 	 *
 	 * @param httpConnectTimeout Timeout in milliseconds.
 	 *
-	 * @see URLConnection#setConnectTimeout(int)
+	 * @see java.net.URLConnection#setConnectTimeout(int)
 	 */
 	public void setHttpConnectTimeout(final int httpConnectTimeout) {
 
@@ -745,7 +750,7 @@ public abstract class BaseOpenIDConnectAuthenticator
 	 *
 	 * @param httpReadTimeout Timeout in milliseconds.
 	 *
-	 * @see URLConnection#setReadTimeout(int)
+	 * @see java.net.URLConnection#setReadTimeout(int)
 	 */
 	public void setHttpReadTimeout(final int httpReadTimeout) {
 
@@ -1525,7 +1530,7 @@ public abstract class BaseOpenIDConnectAuthenticator
 
 				final Signature sig = Signature.getInstance("SHA256withRSA");
 				sig.initVerify(this.ops.getOPConfiguration(opDesc.getIssuer())
-						.getJWKSet().getKey(header.getString("kid")));
+						.getJWKSet().getKey(header.optString("kid", JWKSet.DEFAULT_KID)));
 				sig.update(data.getBytes("ASCII"));
 
 				return sig.verify(signature);
@@ -1630,17 +1635,16 @@ public abstract class BaseOpenIDConnectAuthenticator
 
 		// send POST and read response
 		JSONObject responseBody;
-		try (final OutputStream out = con.getOutputStream()) {
+		try (OutputStream out = con.getOutputStream()) {
 			out.write(postBody.getBytes(UTF8.name()));
 			out.flush();
-			try (final Reader in = new InputStreamReader(
-					con.getInputStream(), UTF8)) {
+			try (Reader in = new InputStreamReader(con.getInputStream(), UTF8)) {
 				responseBody = new JSONObject(new JSONTokener(in));
 			} catch (final IOException e) {
 				final InputStream errorStream = con.getErrorStream();
 				if (errorStream == null)
 					throw e;
-				try (final Reader in = new InputStreamReader(errorStream, UTF8)) {
+				try (Reader in = new InputStreamReader(errorStream, UTF8)) {
 					responseBody = new JSONObject(new JSONTokener(in));
 				}
 			}

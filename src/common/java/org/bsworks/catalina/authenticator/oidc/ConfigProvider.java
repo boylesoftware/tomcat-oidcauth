@@ -134,8 +134,7 @@ abstract class ConfigProvider<T> {
 
 		// read and parse the document
 		final JSONObject document;
-		try (final Reader in = new InputStreamReader(
-				con.getInputStream(), UTF8)) {
+		try (Reader in = new InputStreamReader(con.getInputStream(), UTF8)) {
 			document = new JSONObject(new JSONTokener(in));
 		}
 

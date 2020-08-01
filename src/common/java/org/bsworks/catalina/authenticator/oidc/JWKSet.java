@@ -22,6 +22,11 @@ import org.bsworks.util.json.JSONObject;
 class JWKSet {
 
 	/**
+	 * Key id ("kid") for the default key in the set.
+	 */
+	static final String DEFAULT_KID = "default";
+
+	/**
 	 * ASCII charset.
 	 */
 	private static final Charset ASCII = Charset.forName("ASCII");
@@ -54,8 +59,8 @@ class JWKSet {
 			for (int n = keysProp.length() - 1; n >= 0; n--) {
 				final JSONObject keyDef = keysProp.getJSONObject(n);
 				if (keyDef.optString("kty").equals("RSA")
-						&& keyDef.optString("use").equals("sig"))
-					this.keys.put(keyDef.getString("kid"),
+						&& keyDef.optString("use", "sig").equals("sig"))
+					this.keys.put(keyDef.optString("kid", DEFAULT_KID),
 							keyFactory.generatePublic(new RSAPublicKeySpec(
 									new BigInteger(1, base64.decode(
 											keyDef.getString("n").getBytes(
