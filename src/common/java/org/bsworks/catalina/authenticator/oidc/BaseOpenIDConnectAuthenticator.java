@@ -386,22 +386,22 @@ public abstract class BaseOpenIDConnectAuthenticator
 	/**
 	 * OP token endpoint response.
 	 */
-	private static final class TokenEndpointResponse {
+	public static final class TokenEndpointResponse {
 
 		/**
 		 * Response HTTP status code.
 		 */
-		final int responseCode;
+		public final int responseCode;
 
 		/**
 		 * Response date.
 		 */
-		final Date responseDate;
+		public final Date responseDate;
 
 		/**
 		 * Response body.
 		 */
-		final JSONObject responseBody;
+		public final JSONObject responseBody;
 
 
 		/**
@@ -411,7 +411,7 @@ public abstract class BaseOpenIDConnectAuthenticator
 		 * @param responseDate Response date.
 		 * @param responseBody Response body.
 		 */
-		TokenEndpointResponse(final int responseCode, final long responseDate,
+		public TokenEndpointResponse(final int responseCode, final long responseDate,
 				final JSONObject responseBody) {
 
 			this.responseCode = responseCode;
@@ -437,22 +437,22 @@ public abstract class BaseOpenIDConnectAuthenticator
 	/**
 	 * Authenticated user descriptor.
 	 */
-	private static final class AuthedUser {
+	public static final class AuthedUser {
 
 		/**
 		 * Principal.
 		 */
-		final Principal principal;
+		public final Principal principal;
 
 		/**
 		 * Username.
 		 */
-		final String username;
+		public final String username;
 
 		/**
 		 * Password, if any.
 		 */
-		final String password;
+		public final String password;
 
 
 		/**
@@ -462,7 +462,7 @@ public abstract class BaseOpenIDConnectAuthenticator
 		 * @param username Username.
 		 * @param password Password, or {@code null} if not applicable.
 		 */
-		AuthedUser(final Principal principal,
+		public AuthedUser(final Principal principal,
 				final String username, final String password) {
 
 			this.principal = principal;
