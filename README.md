@@ -119,13 +119,21 @@ Here is an example of the valve configuration with multiple OpenID Providers and
                name: 'Amazon Cognito',
                issuer: https://cognito-idp.us-east-1.amazonaws.com/us-east-1_AGKCjG3dQ,
                clientId: lz63q5p6qfn1ibjup0hn7jwka,
-               clientSecret: 1mz5n48ockpvqfirfkei7chgbo223ndgiblorrf4ksmcomr2itec
+               clientSecret: 1mz5n48ockpvqfirfkei7chgbo223ndgiblorrf4ksmcomr2itec,
+			   logoutUrl: https://example.auth.us-east-1.amazoncognito.com/logout?client_id=$(clientId)&amp;logout_uri=$(postLogoutUrl)
            },
            {
                name: 'Microsoft Azure AD',
                issuer: https://sts.windows.net/45185e72-2ac1-4371-acec-d0b6d4469ce2/,
                clientId: 817343e7-2f24-4951-acd1-8285665280c3,
                clientSecret: WLvE8nEz0zHOxrv1XrVLSzMd21URsx4i6owlv9059wk=
+           },
+		   {
+               name: 'Microsoft Azure AD 2',
+               issuer: https://login.microsoftonline.com/45185e72-2ac1-4371-acec-d0b6d4469ce2/v2.0,
+               clientId: 817343e7-2f24-4951-acd1-8285665280c3,
+               clientSecret: PayteUNZ4142+^kv(FWv42%,
+               tokenEndpointAuthMethod: client_secret_post
            },
            {
                 name: Okta,
@@ -143,7 +151,7 @@ Here is an example of the valve configuration with multiple OpenID Providers and
                usernameClaim: attrib.email
            }
        ]"
-       usernameClaim="email" additionalScopes="email" />
+       usernameClaim="email" additionalScopes="email" postLogoutPage="/home" />
 ```
 
 _Note that contrary to the previous releases of this authenticator, special configuration of the realm where username and password must be always the same is no longer required. This allows using the same realm for both form-based authentication and the OP-based authentication. When OP-based authentication is used, the user is looked up in the realm by the username without checking the password (see Tomcat Realm interface [documentation](https://tomcat.apache.org/tomcat-9.0-doc/api/org/apache/catalina/Realm.html#authenticate-java.lang.String-))._
