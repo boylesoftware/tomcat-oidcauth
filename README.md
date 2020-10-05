@@ -120,7 +120,7 @@ Here is an example of the valve configuration with multiple OpenID Providers and
                issuer: https://cognito-idp.us-east-1.amazonaws.com/us-east-1_AGKCjG3dQ,
                clientId: lz63q5p6qfn1ibjup0hn7jwka,
                clientSecret: 1mz5n48ockpvqfirfkei7chgbo223ndgiblorrf4ksmcomr2itec,
-			   logoutUrl: https://example.auth.us-east-1.amazoncognito.com/logout?client_id=$(clientId)&amp;logout_uri=$(postLogoutUrl)
+               logoutUrl: https://example.auth.us-east-1.amazoncognito.com/logout?client_id=$(clientId)&amp;logout_uri=$(postLogoutUrl)
            },
            {
                name: 'Microsoft Azure AD',
@@ -128,7 +128,7 @@ Here is an example of the valve configuration with multiple OpenID Providers and
                clientId: 817343e7-2f24-4951-acd1-8285665280c3,
                clientSecret: WLvE8nEz0zHOxrv1XrVLSzMd21URsx4i6owlv9059wk=
            },
-		   {
+           {
                name: 'Microsoft Azure AD 2',
                issuer: https://login.microsoftonline.com/45185e72-2ac1-4371-acec-d0b6d4469ce2/v2.0,
                clientId: 817343e7-2f24-4951-acd1-8285665280c3,
