@@ -6,6 +6,7 @@ import java.io.Reader;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.nio.charset.Charset;
+import java.util.Date;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -48,7 +49,7 @@ abstract class ConfigProvider<T> {
 	/**
 	 * Milliseconds before the cached document expiration to reload it.
 	 */
-	private static final int EXP_GAP = 60000;
+	private static final int EXP_GAP = 5000;
 
 	/**
 	 * Default cached document maximum age in milliseconds.
@@ -160,6 +161,9 @@ abstract class ConfigProvider<T> {
 			this.expireAt = con.getExpiration();
 		if (this.expireAt == 0)
 			this.expireAt = responseDate + DEFAULT_MAX_AGE;
+		if (debug)
+			this.log.debug("response date: " + new Date(responseDate) +
+					", expire at: " + new Date(this.expireAt));
 	}
 
 	/**

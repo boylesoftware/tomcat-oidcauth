@@ -1400,9 +1400,10 @@ public abstract class BaseOpenIDConnectAuthenticator
 		// validate the ID token:
 
 		// validate issuer match
-		if (!issuer.equals(idTokenPayload.getString("iss", null))) {
+		final String issValue = idTokenPayload.getString("iss", null);
+		if ((issValue == null) || !opDesc.getValidIssPattern().matcher(issValue).matches()) {
 			if (debug)
-				this.log.debug("the ID token issuer does not match");
+				this.log.debug("the ID token issuer is missing or does not match");
 			return null;
 		}
 
@@ -1422,7 +1423,7 @@ public abstract class BaseOpenIDConnectAuthenticator
 		}
 		if (!audMatch) {
 			if (debug)
-				this.log.debug("the ID token audience does not match");
+				this.log.debug("the ID token audience is missing or does not match");
 			return null;
 		}
 

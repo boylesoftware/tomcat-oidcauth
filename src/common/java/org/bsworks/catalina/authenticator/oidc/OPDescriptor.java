@@ -4,6 +4,7 @@ import java.io.UnsupportedEncodingException;
 import java.net.MalformedURLException;
 import java.net.URL;
 import java.net.URLEncoder;
+import java.util.regex.Pattern;
 
 import org.bsworks.util.json.JSONObject;
 
@@ -20,6 +21,11 @@ class OPDescriptor {
 	 * Issuer identifier.
 	 */
 	private final String issuer;
+
+	/**
+	 * Pattern for validating "iss" claim.
+	 */
+	private final Pattern validIssPattern;
 
 	/**
 	 * OP name.
@@ -93,6 +99,7 @@ class OPDescriptor {
 						" values.");
 		int i = 0;
 		this.issuer = parts[i++];
+		this.validIssPattern = Pattern.compile("\\Q" + this.issuer + "\\E");
 		this.name = this.issuer;
 		this.clientId = parts[i++];
 		final String secretVal = parts[i++];
@@ -132,6 +139,8 @@ class OPDescriptor {
 		if (this.issuer == null)
 			throw new IllegalArgumentException("Invalid OP definition:"
 					+ " missing \"issuer\" property.");
+		this.validIssPattern = Pattern.compile(definition.optString("validIssPattern",
+				"\\Q" + this.issuer + "\\E"));
 		this.name = definition.optString("name", this.issuer);
 		this.clientId = definition.optString("clientId", null);
 		if (this.clientId == null)
@@ -217,6 +226,16 @@ class OPDescriptor {
 	String getIssuer() {
 
 		return this.issuer;
+	}
+
+	/**
+	 * Get pattern used to validate "iss" claim in the ID token.
+	 *
+	 * @return The "iss" claim validation pattern.
+	 */
+	Pattern getValidIssPattern() {
+
+		return this.validIssPattern;
 	}
 
 	/**

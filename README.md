@@ -65,6 +65,8 @@ The authenticator is configured using the following attributes on the valve:
 
   * `issuer` _(required)_ - The OP's unique _Issuer Identifier_ corresponding to the `iss` claim in the [ID Token](https://openid.net/specs/openid-connect-core-1_0.html#IDToken). The issuer identifier is a URL that is used for identifying the OP to the application, validating the ID Token `iss` claim and, unless `documentConfigurationUrl` property described below is included, to load the OP configuration document according to the [OpenID Connect Discovery](https://openid.net/specs/openid-connect-discovery-1_0.html)'s [Obtaining OpenID Provider Configuration Information](https://openid.net/specs/openid-connect-discovery-1_0.html#ProviderConfig) process (by adding `.well-known/openid-configuration` to the issuer identifier to form the OP configuration document URL).
 
+  * `validIssPattern` _(optional)_ - A regex pattern to use to validate the "iss" claim in the ID Token. If unspecified, a valid "iss" ID Token claim must be exactly equal to the `issuer` value, which is the standard OpenID Connect specification behavior. The standard behavior can be overridden for non-standard IdP implementations using this configuration attribute. If specified, the regex is matched against the _entire_ "iss" value (see `java.util.regex.Matcher.matches()` method).
+
   * `name` _(optional)_ - Application specific OP name made available to the login page. If not specified, defaults to the `issuer` value.
 
   * `clientId` _(required)_ - The client ID associated with the web-application at the OP.
