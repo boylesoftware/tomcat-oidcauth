@@ -121,8 +121,7 @@ Here is an example of the valve configuration with multiple OpenID Providers and
                name: 'Amazon Cognito',
                issuer: https://cognito-idp.us-east-1.amazonaws.com/us-east-1_AGKCjG3dQ,
                clientId: lz63q5p6qfn1ibjup0hn7jwka,
-               clientSecret: 1mz5n48ockpvqfirfkei7chgbo223ndgiblorrf4ksmcomr2itec,
-               logoutUrl: https://example.auth.us-east-1.amazoncognito.com/logout?client_id=$(clientId)&amp;logout_uri=$(postLogoutUrl)
+               clientSecret: 1mz5n48ockpvqfirfkei7chgbo223ndgiblorrf4ksmcomr2itec
            },
            {
                name: 'Microsoft Azure AD',
@@ -153,7 +152,7 @@ Here is an example of the valve configuration with multiple OpenID Providers and
                usernameClaim: attrib.email
            }
        ]"
-       usernameClaim="email" additionalScopes="email" postLogoutPage="/home" />
+       usernameClaim="email" additionalScopes="email" />
 ```
 
 _Note that contrary to the previous releases of this authenticator, special configuration of the realm where username and password must be always the same is no longer required. This allows using the same realm for both form-based authentication and the OP-based authentication. When OP-based authentication is used, the user is looked up in the realm by the username without checking the password (see Tomcat Realm interface [documentation](https://tomcat.apache.org/tomcat-9.0-doc/api/org/apache/catalina/Realm.html#authenticate-java.lang.String-))._
