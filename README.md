@@ -153,10 +153,10 @@ Here is an example of the valve configuration with multiple OpenID Providers and
                tokenEndpointAuthMethod: client_secret_post
            },
            {
-                name: Okta,
-                issuer: https://example.okta.com,
-                clientId: 0oa16n2pagwGjnf6w2z9,
-                clientSecret: 7P_3LuCWhdl4QGoF38PxNDCoXRQB2QznVXf1s4CF
+               name: Okta,
+               issuer: https://example.okta.com,
+               clientId: 0oa16n2pagwGjnf6w2z9,
+               clientSecret: 7P_3LuCWhdl4QGoF38PxNDCoXRQB2QznVXf1s4CF
            },
            {
                name: empowerID,
