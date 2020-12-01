@@ -31,16 +31,6 @@ abstract class ConfigProvider<T> {
 	private static final Charset UTF8 = Charset.forName("UTF-8");
 
 	/**
-	 * Connect timeout for getting the document.
-	 */
-	private static final int CONNECT_TIMEOUT = 5000;
-
-	/**
-	 * Read timeout for getting the document.
-	 */
-	private static final int READ_TIMEOUT = 5000;
-
-	/**
 	 * Pattern used to extract max age from the cache control header.
 	 */
 	private static final Pattern MAX_AGE_PATTERN =
@@ -68,9 +58,29 @@ abstract class ConfigProvider<T> {
 	private final URL documentURL;
 
 	/**
+	 * Connect timeout for getting the document.
+	 */
+	private final int httpConnectTimeout;
+
+	/**
+	 * Read timeout for getting the document.
+	 */
+	private final int httpReadTimeout;
+
+	/**
+	 * Tells if the document is optional.
+	 */
+	private final boolean optional;
+
+	/**
+	 * Optional document fetch retry timeout.
+	 */
+	private final int retryTimeout;
+
+	/**
 	 * Cached configuration object.
 	 */
-	private T cachedConfig;
+	private T cachedConfig = null;
 
 	/**
 	 * Time when the cached configuration expires.
@@ -82,29 +92,58 @@ abstract class ConfigProvider<T> {
 	 * Create new provider.
 	 *
 	 * @param documentURL Configuration document URL.
+	 * @param httpConnectTimeout Connect timeout for getting the document.
+	 * @param httpReadTimeout Read timeout for getting the document.
+	 * @param optional {@code true} if the configuration document is optional,
+	 * in which case the {@link #get()} method returns {@code null} instead of
+	 * throwing an {@code IOException} if unable to fetch the document from
+	 * the URL.
+	 * @param retryTimeout For optional documents, amount of time in
+	 * milliseconds before retrying to fetch the document after an unsuccessful
+	 * attempt. Unused if {@code optional} is {@code false}.
 	 */
-	ConfigProvider(final URL documentURL) {
+	ConfigProvider(
+			final URL documentURL,
+			final int httpConnectTimeout,
+			final int httpReadTimeout,
+			final boolean optional,
+			final int retryTimeout
+	) {
 
 		this.documentURL = documentURL;
+		this.httpConnectTimeout = httpConnectTimeout;
+		this.httpReadTimeout = httpReadTimeout;
+		this.optional = optional;
+		this.retryTimeout = retryTimeout;
 	}
 
 
 	/**
 	 * Get the configuration object.
 	 *
-	 * @return The configuration object.
+	 * @return The configuration object. If document is optional, returns
+	 * {@code null} if unable to fetch the document from the URL.
 	 *
 	 * @throws IOException If an I/O error happens loading the configuration
-	 * object.
+	 * object and the document is not optional.
 	 */
-	T get()
-		throws IOException {
+	T get() throws IOException {
 
 		if (System.currentTimeMillis() > this.expireAt - EXP_GAP) {
 			synchronized (this) {
 				if (System.currentTimeMillis() > this.expireAt - EXP_GAP) {
 					this.expireAt = 0;
-					this.loadDocument();
+					try {
+						this.loadDocument();
+					} catch (final IOException e) {
+						if (this.optional) {
+							this.log.error("Error loading optional configuration document from "
+									+ this.documentURL + ". Will retry.", e);
+							this.expireAt = System.currentTimeMillis() + this.retryTimeout;
+						} else {
+							throw e;
+						}
+					}
 				}
 			}
 		}
@@ -115,10 +154,10 @@ abstract class ConfigProvider<T> {
 	/**
 	 * Load the configuration document.
 	 *
-	 * @throws IOException If an I/O error happens.
+	 * @throws IOException If an I/O error happens and the document is not
+	 * optional.
 	 */
-	protected void loadDocument()
-		throws IOException {
+	protected void loadDocument() throws IOException {
 
 		// log the load
 		final boolean debug = this.log.isDebugEnabled();
@@ -128,8 +167,8 @@ abstract class ConfigProvider<T> {
 		// configure document load connection
 		final HttpURLConnection con =
 			(HttpURLConnection) this.documentURL.openConnection();
-		con.setConnectTimeout(CONNECT_TIMEOUT);
-		con.setReadTimeout(READ_TIMEOUT);
+		con.setConnectTimeout(this.httpConnectTimeout);
+		con.setReadTimeout(this.httpReadTimeout);
 		con.addRequestProperty("Accept",
 			"application/jwk-set+json, application/json");
 
@@ -172,6 +211,8 @@ abstract class ConfigProvider<T> {
 	 * @param document Loaded JSON document.
 	 *
 	 * @return The configuration object.
+	 *
+	 * @throws IOException If document is invalid.
 	 */
-	protected abstract T parseDocument(JSONObject document);
+	protected abstract T parseDocument(JSONObject document) throws IOException;
 }

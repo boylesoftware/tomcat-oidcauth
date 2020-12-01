@@ -573,12 +573,14 @@ public abstract class BaseOpenIDConnectAuthenticator
 	protected boolean noForm = false;
 
 	/**
-	 * HTTP connect timeout for OP endpoints.
+	 * HTTP connect timeout for OP endpoints and configuration document URL.
+	 * Can be overridden for specific OPs.
 	 */
 	protected int httpConnectTimeout = 5000;
 
 	/**
-	 * HTTP read timeout for OP endpoints.
+	 * HTTP read timeout for OP endpoints and configuration document URL.
+	 * Can be overridden for specific OPs.
 	 */
 	protected int httpReadTimeout = 5000;
 
@@ -801,7 +803,8 @@ public abstract class BaseOpenIDConnectAuthenticator
 								+ " OpenIDConnectAuthenticator \"providers\""
 								+ " array element " + i + ".");
 					this.opDescs.add(new OPDescriptor((JSONObject) opDef,
-							this.usernameClaim, this.additionalScopes));
+							this.usernameClaim, this.additionalScopes,
+							this.httpConnectTimeout, this.httpReadTimeout));
 				}
 			} catch (final IOException | JSONException e) {
 				throw new LifecycleException("OpenIDConnectAuthenticator could"
@@ -815,7 +818,8 @@ public abstract class BaseOpenIDConnectAuthenticator
 		// preload provider configurations and detect any errors
 		try {
 			for (final OPDescriptor opDesc : this.opDescs)
-				this.ops.getOPConfiguration(opDesc.getIssuer());
+				if (!opDesc.isOptional())
+					this.ops.getOPConfiguration(opDesc.getIssuer());
 		} catch (final IOException | JSONException e) {
 			throw new LifecycleException("OpenIDConnectAuthenticator could not"
 					+ " load OpenID Connect Provider configuration.", e);
@@ -848,7 +852,8 @@ public abstract class BaseOpenIDConnectAuthenticator
 		final List<OPDescriptor> descs = new ArrayList<>(defs.length);
 		for (final String def : defs)
 			descs.add(new OPDescriptor(def,
-					this.usernameClaim, this.additionalScopes));
+					this.usernameClaim, this.additionalScopes,
+					this.httpConnectTimeout, this.httpReadTimeout));
 
 		return descs;
 	}
@@ -1223,6 +1228,8 @@ public abstract class BaseOpenIDConnectAuthenticator
 			final String issuer = opDesc.getIssuer();
 			final OPConfiguration opConfig =
 				this.ops.getOPConfiguration(issuer);
+			if (opConfig == null)
+				continue;
 
 			// construct the authorization endpoint URL
 			buf.setLength(0);
@@ -1261,8 +1268,10 @@ public abstract class BaseOpenIDConnectAuthenticator
 	 *
 	 * @return The authenticated user, or {@code null} if login failure.
 	 */
-	protected AuthedUser processAuthFormSubmission(final Session session,
-			final String username, final String password) {
+	protected AuthedUser processAuthFormSubmission(
+			@SuppressWarnings("unused") final Session session,
+			final String username, final String password
+	) {
 
 		final boolean debug = this.log.isDebugEnabled();
 		if (debug)
@@ -1529,9 +1538,15 @@ public abstract class BaseOpenIDConnectAuthenticator
 
 			case "RS256":
 
+				final OPConfiguration opConfig = this.ops.getOPConfiguration(opDesc.getIssuer());
+				if (opConfig == null) {
+					this.log.warn("optional provider "
+							+ opDesc.getIssuer() + " could not be configured"
+							+ ", reporting invalid token signature");
+					return false;
+				}
 				final Signature sig = Signature.getInstance("SHA256withRSA");
-				sig.initVerify(this.ops.getOPConfiguration(opDesc.getIssuer())
-						.getJWKSet().getKey(header.optString("kid", JWKSet.DEFAULT_KID)));
+				sig.initVerify(opConfig.getJWKSet().getKey(header.optString("kid", JWKSet.DEFAULT_KID)));
 				sig.update(data.getBytes("ASCII"));
 
 				return sig.verify(signature);
@@ -1590,6 +1605,9 @@ public abstract class BaseOpenIDConnectAuthenticator
 		// get the OP configuration
 		final OPConfiguration opConfig =
 			this.ops.getOPConfiguration(opDesc.getIssuer());
+		if (opConfig == null)
+			throw new RuntimeException("Optional provider "
+					+ opDesc.getIssuer() + " could not be configured.");
 		final URL tokenEndpointURL = new URL(opConfig.getTokenEndpoint());
 
 		// build POST body
@@ -1602,8 +1620,8 @@ public abstract class BaseOpenIDConnectAuthenticator
 		// configure connection
 		final HttpURLConnection con =
 			(HttpURLConnection) tokenEndpointURL.openConnection();
-		con.setConnectTimeout(this.httpConnectTimeout);
-		con.setReadTimeout(this.httpReadTimeout);
+		con.setConnectTimeout(opDesc.getEndpointHttpConnectTimeout());
+		con.setReadTimeout(opDesc.getEndpointHttpReadTimeout());
 		con.setDoOutput(true);
 		con.addRequestProperty("Content-Type",
 				"application/x-www-form-urlencoded");

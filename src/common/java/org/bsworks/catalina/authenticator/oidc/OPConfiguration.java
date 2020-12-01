@@ -39,11 +39,16 @@ class OPConfiguration {
 	 * Construct OpenID Connect provider configuration from JSON document.
 	 *
 	 * @param document The JSON document.
+	 * @param jwksHttpConnectTimeout HTTP connect timeout for JWKS URL.
+	 * @param jwksHttpReadTimeout HTTP read timeout for JWKS URL.
 	 *
 	 * @throws IOException If an I/O error happens pre-loading the JWK set.
 	 */
-	OPConfiguration(final JSONObject document)
-		throws IOException {
+	OPConfiguration(
+			final JSONObject document,
+			final int jwksHttpConnectTimeout,
+			final int jwksHttpReadTimeout
+	) throws IOException {
 
 		this.issuer = document.getString("issuer");
 		this.authorizationEndpoint =
@@ -57,7 +62,10 @@ class OPConfiguration {
 			throw new IllegalArgumentException(
 					"Invalid JWKS URI in the OP configuration.", e);
 		}
-		this.jwksProvider = new ConfigProvider<JWKSet>(jwksUri) {
+		this.jwksProvider = new ConfigProvider<JWKSet>(
+				jwksUri, jwksHttpConnectTimeout, jwksHttpReadTimeout,
+				false, 0
+		) {
 			@Override
 			protected JWKSet parseDocument(final JSONObject jwksDocument) {
 				return new JWKSet(jwksDocument);
@@ -103,8 +111,7 @@ class OPConfiguration {
 	 *
 	 * @throws IOException If an I/O error happens loading the JWK set.
 	 */
-	JWKSet getJWKSet()
-		throws IOException {
+	JWKSet getJWKSet() throws IOException {
 
 		return this.jwksProvider.get();
 	}

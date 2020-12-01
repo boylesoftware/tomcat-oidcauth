@@ -32,16 +32,20 @@ class OPConfigurationsProvider {
 		for (final OPDescriptor opDesc : opDescs)
 			if (this.providers.put(opDesc.getIssuer(),
 					new ConfigProvider<OPConfiguration>(
-							opDesc.getConfigurationDocumentUrl()) {
+							opDesc.getConfigUrl(),
+							opDesc.getConfigHttpConnectTimeout(),
+							opDesc.getConfigHttpReadTimeout(),
+							opDesc.isOptional(),
+							opDesc.getConfigRetryTimeout()
+					) {
 						@Override
 						protected OPConfiguration parseDocument(
-								final JSONObject document) {
-							try {
-								return new OPConfiguration(document);
-							} catch (final IOException e) {
-								throw new IllegalArgumentException(
-										"Error loading JWKS.", e);
-							}
+								final JSONObject document) throws IOException {
+							return new OPConfiguration(
+									document,
+									opDesc.getJwksHttpConnectTimeout(),
+									opDesc.getJwksHttpReadTimeout()
+							);
 						}
 					}) != null)
 				throw new IllegalArgumentException(
@@ -55,7 +59,8 @@ class OPConfigurationsProvider {
 	 *
 	 * @param issuer The OP's issuer ID.
 	 *
-	 * @return The configuration.
+	 * @return The configuration, or {@code null} if the OP is optional and
+	 * there was an error loading the OP configuration document.
 	 *
 	 * @throws IllegalArgumentException If the issuer ID is unknown.
 	 * @throws IOException If an I/O error happens loading the OP configuration

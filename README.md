@@ -61,7 +61,7 @@ For Tomcat 8.5 it will look like the following:
 
 The authenticator is configured using the following attributes on the valve:
 
-* `providers` _(required)_ - JSON-like array of objects, each describing an OpenID Provider (OP) available to the application. The syntax differs from the standard JSON in that it does not use double quotes around the property names and values (to make it XML attribute value friendly). A property value must be surrounded with single quotes if it contains commas, curly braces or whitespace. Each object describing an OP includes the following properties:
+* `providers` _(required)_ - JSON-like array of objects, each describing and configuring an OpenID Provider (OP) available to the application. The syntax differs from the standard JSON in that it does not use double quotes around the property names and values (to make it XML attribute value friendly). A property value must be surrounded with single quotes if it contains commas, curly braces or whitespace. Each object describing an OP includes the following properties:
 
   * `issuer` _(required)_ - The OP's unique _Issuer Identifier_ corresponding to the `iss` claim in the [ID Token](https://openid.net/specs/openid-connect-core-1_0.html#IDToken). The issuer identifier is a URL that is used for identifying the OP to the application, validating the ID Token `iss` claim and, unless `documentConfigurationUrl` property described below is included, to load the OP configuration document according to the [OpenID Connect Discovery](https://openid.net/specs/openid-connect-discovery-1_0.html)'s [Obtaining OpenID Provider Configuration Information](https://openid.net/specs/openid-connect-discovery-1_0.html#ProviderConfig) process (by adding `.well-known/openid-configuration` to the issuer identifier to form the OP configuration document URL).
 
@@ -77,11 +77,27 @@ The authenticator is configured using the following attributes on the valve:
 
   * `tokenEndpointAuthMethod` _(optional)_ - Explicitly specified authentication method for the OP's [Token Endpoint](https://openid.net/specs/openid-connect-core-1_0.html#TokenEndpoint). Normally the authenticator will use "client_secret_basic" if the OP configuration includes a client secret and "none" if it doesn't. This property, however, allows overriding that logic and forcing a specific authentication method. For the description of the authentication methods see [Client Authentication](https://openid.net/specs/openid-connect-core-1_0.html#ClientAuthentication). Note, that currently "client_secret_jwt" and "private_key_jwt" methods are not supported.
 
-  * `configurationDocumentUrl` _(optional)_ - URL for the OP configuration document. If not specified, the URL is automatically built from the issuer ID using the process defined in [OpenID Connect Discovery](https://openid.net/specs/openid-connect-discovery-1_0.html). However, some non-standard OPs may have their configuration document at a different location. This property allows configuring such non-standard OPs.
+  * `configUrl` _(optional)_ - URL for the OP configuration document. If not specified, the URL is automatically constructed from the issuer ID using the process defined in [OpenID Connect Discovery](https://openid.net/specs/openid-connect-discovery-1_0.html). However, some non-standard OPs may have their configuration document at a different location. This property allows configuring such non-standard OPs. The deprecated (and still supported) name of this property is `configurationDocumentUrl`.
 
   * `usernameClaim` _(optional)_ - Claim in the [ID Token](https://openid.net/specs/openid-connect-core-1_0.html#IDToken) used as the username in the [Realm](https://tomcat.apache.org/tomcat-9.0-doc/realm-howto.html). The default is `sub`, which is the ID of the user known to the OP. Often, however, claims such as `email` are more convenient to use as usernames. To use properties in nested objects in the ID Token, the `usernameClaim` supports the dot notaion.
 
   * `additionalScopes` _(optional)_ - Space-separated list of scopes to add to the `openid` scope, always included, for the OP's [Authorization Endpoint](https://openid.net/specs/openid-connect-core-1_0.html#AuthorizationEndpoint). For example, if `email` claim is used as the username, the `email` scope can be added (`email` claim is normally not included in the ID Token unless explicitly requested as part of the `email`, `profile` or similar scope at the Authorization Endpoint).
+
+  * `endpointHttpConnectTimeout` _(optional)_ - HTTP connection timeout in milliseconds for the OP endpoints. If unspecified, the `httpConnectTimeout` valve attribute is used.
+
+  * `endpointHttpReadTimeout` _(optional)_ - HTTP read timeout in milliseconds for the OP endpoints. If unspecified, the `httpReadTimeout` valve attribute is used.
+
+  * `configHttpConnectTimeout` _(optional)_ - HTTP timeout in milliseconds for connecting to the OP configuration document URL (see `configUrl` property). If unspecified, the `httpConnectTimeout` valve attribute is used.
+
+  * `configHttpReadTimeout` _(optional)_ - HTTP timeout in milliseconds for loading the OP configuration document (see `configUrl` property). If unspecified, the `httpReadTimeout` valve attribute is used.
+
+  * `jwksHttpConnectTimeout` _(optional)_ - HTTP timeout in milliseconds for connecting to the OP JWKS URL (see `jwks_uri` property in [OpenID Provider Metadata](https://openid.net/specs/openid-connect-discovery-1_0.html#ProviderMetadata)). If unspecified, the `httpConnectTimeout` valve attribute is used.
+
+  * `jwksHttpReadTimeout` _(optional)_ - HTTP timeout in milliseconds for loading the OP JWKS (see `jwks_uri` property in [OpenID Provider Metadata](https://openid.net/specs/openid-connect-discovery-1_0.html#ProviderMetadata)). If unspecified, the `httpReadTimeout` valve attribute is used.
+
+  * `optional` _(optional)_ - If "true", the OP is not required for the web-application operation. If there is any problem configuring the OP, such as inability to load the OP configuration document from `configUrl`, the OP can be excluded from the list of OPs available to the web-application as if it was never configured. If unspecified or "false", the OP is required and the web-application will fail to start unless it is able to fully configure the OP. This property may be useful to application that support multiple OPs, some of which are unreliable and go down from time to time. Once a failed OP is detected, either it's previous configuration is used or, if there is no previous configuration, it is excluded from the list of available OPs. The next attempt to configure it is taken after `configRetryTimeout` milliseconds.
+
+  * `configRetryTimeout` _(optional)_ - Milliseconds to wait until another attempt to configure a failed OP. Only relevant if `optional` is set to "true". Default is 10000 (10 seconds).
 
 * `usernameClaim` _(optional)_ - Default username claim to use for OPs that do not override it in their specific descriptors.
 
@@ -91,9 +107,9 @@ The authenticator is configured using the following attributes on the valve:
 
 * `noForm` _(optional)_ - If "true", the form-based authentication is disabled and only OpenID Connect authentication is allowed. The default is "false". The value of the flag is made available to the web-application's login page as well, so it can make a decision to display the login form or not.
 
-* `httpConnectTimeout` _(optional)_ - Timeout in milliseconds used for establishing server-to-server HTTP connections with the OP (see [java.net.URLConnection.setConnectTimeout()](https://docs.oracle.com/javase/8/docs/api/java/net/URLConnection.html#setConnectTimeout-int-)). Default is 5000 (5 seconds).
+* `httpConnectTimeout` _(optional)_ - Timeout in milliseconds used for establishing server-to-server HTTP connections with the OP endpoints, configuration document and JWKS URLs (see [java.net.URLConnection.setConnectTimeout()](https://docs.oracle.com/javase/8/docs/api/java/net/URLConnection.html#setConnectTimeout-int-)). This timeout applies to all configured OPs. Individual OP configurations can override this value and set more specific values for specific connectiob cases. Default is 5000 (5 seconds).
 
-* `httpReadTimeout` _(optional)_ - Timeout in milliseconds used for reading data in server-to-server HTTP connections with the OP (see [java.net.URLConnection.setReadTimeout()](https://docs.oracle.com/javase/8/docs/api/java/net/URLConnection.html#setReadTimeout-int-)). Default is 5000 (5 seconds).
+* `httpReadTimeout` _(optional)_ - Timeout in milliseconds used for reading data in server-to-server HTTP connections with the OP, configuration document and JWKS URLs (see [java.net.URLConnection.setReadTimeout()](https://docs.oracle.com/javase/8/docs/api/java/net/URLConnection.html#setReadTimeout-int-)). This timeout applies to all configured OPs. Individual OP configurations can override this value and set more specific values for specific connectiob cases. Default is 5000 (5 seconds).
 
 In addition to the attributes described above, all the attributes of the standard form-based authenticator are supported. For more information see [Form Authenticator Valve](https://tomcat.apache.org/tomcat-9.0-doc/config/valve.html#Form_Authenticator_Valve).
 
@@ -145,7 +161,7 @@ Here is an example of the valve configuration with multiple OpenID Providers and
            {
                name: empowerID,
                issuer: https://sso.empoweriam.com,
-               configurationDocumentUrl: https://sso.empoweriam.com/oauth/.well-known/openid-configuration,
+               configUrl: https://sso.empoweriam.com/oauth/.well-known/openid-configuration,
                clientId: 8c3e74b6-7dfb-451f-ac2f-219deb353a70,
                clientSecret: 17aebdf6-1177-4a5d-bff3-e33b7a8c0223,
                tokenEndpointAuthMethod: client_secret_post,
