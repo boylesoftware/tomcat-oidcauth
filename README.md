@@ -37,7 +37,7 @@ Once the authenticator exchanges the authoization code for the ID Token, it extr
 
 The binary release of the authenticator can be downloaded from _Boyle Software, Inc._'s _Maven_ repository at:
 
-https://boylesoftware.com/maven/repo-os/org/bsworks/catalina/authenticator/oidc/tomcat-oidcauth/
+https://maven.boylesoftware.com/maven/repo-os/org/bsworks/catalina/authenticator/oidc/tomcat-oidcauth/
 
 The JAR need to be added to the Tomcat's classpath, for example, by placing it in `$CATALINA_BASE/lib` directory (see Tomcat's [Class Loader How-To](https://tomcat.apache.org/tomcat-9.0-doc/class-loader-howto.html) for more info).
 
